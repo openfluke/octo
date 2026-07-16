@@ -1,10 +1,10 @@
 {
-  "name": "smol2-135m-fuse",
+  "name": "smol2-135m-fuse-gpu-stress",
   "model": {
     "repo": "HuggingFaceTB/SmolLM2-135M-Instruct",
     "download": true
   },
-  "quantize": "all",
+  "quantize": ["IQ3_S", "IQ4_NL", "IQ4_XS", "TernaryPacked", "BinaryPacked"],
   "system_prompt": "You are a helpful assistant.",
   "messages": [
     "Say hi in one short sentence.",

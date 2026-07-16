@@ -187,12 +187,19 @@ func Run(templatePath string, quiet bool) (string, error) {
 				prof.PackFormat = format
 			}
 
-			model.CloseGPU() // tear down previous profile GPU state before switching
+			model.CloseGPU() // tear down previous profile GPU buffers before switching
+			model.ClearFloatCaches()
+			runtime.GC()
+			debug.FreeOSMemory()
 			if err := model.ApplyExec(prof); err != nil {
 				for mi, msg := range t.Messages {
 					done++
 					log.Runs = append(log.Runs, runRowErr(fmtName, entityPath, entityMB, profName, mi, msg, "exec: "+err.Error()))
 					flushPartial(partialPath, &log)
+					if !quiet {
+						fmt.Printf("  [%d/%d] [ERR] %s / %s msg%d — %s\n",
+							done, totalPlanned, fmtName, profName, mi, truncate(err.Error(), 80))
+					}
 				}
 				continue
 			}
@@ -239,6 +246,7 @@ func Run(templatePath string, quiet bool) (string, error) {
 		}
 
 		model.CloseGPU()
+		model.ClearFloatCaches()
 		model = nil
 		runtime.GC()
 		runtime.GC()
@@ -255,9 +263,13 @@ func Run(templatePath string, quiet bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	tablePath, tableErr := writeTableReport(log, outPath)
 	_ = os.Remove(partialPath)
 	if !quiet {
 		fmt.Printf("\n✅ Results: %s\n", outPath)
+		if tableErr == nil {
+			fmt.Printf("   table:   %s\n", tablePath)
+		}
 		fmt.Printf("   total=%d ok=%d failed=%d skipped=%d (%.0fs)\n",
 			log.Summary.Total, log.Summary.OK, log.Summary.Failed, log.Summary.Skipped,
 			log.FinishedAt.Sub(log.StartedAt).Seconds())
