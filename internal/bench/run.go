@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -200,11 +201,13 @@ func Run(templatePath string, quiet bool) (string, error) {
 				done++
 				t0 := time.Now()
 				model.ResetKV()
+				memBefore := sampleMem()
 				reply, metrics, genErr := model.Generate(
 					encode, decode, nil, t.SystemPrompt, msg,
 					transformer.GenOptions{MaxTokens: t.MaxTokens, Silent: true, PrintMetrics: false},
 				)
 				elapsed := time.Since(t0)
+				memAfter := sampleMem()
 
 				row := RunRow{
 					Quantize:     fmtName,
@@ -218,7 +221,7 @@ func Run(templatePath string, quiet bool) (string, error) {
 				if genErr != nil {
 					row.Error = genErr.Error()
 				} else {
-					row.Metrics = metricsToRow(metrics)
+					row.Metrics = metricsToRow(metrics, entityMB, memBefore, memAfter)
 				}
 				log.Runs = append(log.Runs, row)
 				flushPartial(partialPath, &log)
@@ -228,12 +231,9 @@ func Run(templatePath string, quiet bool) (string, error) {
 					if row.Error != "" {
 						status = "ERR"
 					}
-					speed := ""
-					if row.Metrics != nil && row.Metrics.GeneratedTokens > 0 {
-						speed = fmt.Sprintf(" decode=%.2f tok/s", row.Metrics.DecodeTokPerSec)
-					}
 					fmt.Printf("  [%d/%d] [%s] %s / %s msg%d (%v)%s\n",
-						done, totalPlanned, status, fmtName, profName, mi, elapsed.Round(time.Millisecond), speed)
+						done, totalPlanned, status, fmtName, profName, mi, elapsed.Round(time.Millisecond),
+						formatRunStats(row.Metrics))
 				}
 			}
 		}
@@ -241,6 +241,8 @@ func Run(templatePath string, quiet bool) (string, error) {
 		model.CloseGPU()
 		model = nil
 		runtime.GC()
+		runtime.GC()
+		debug.FreeOSMemory()
 		if !quiet {
 			fmt.Printf("  unloaded %s\n", fmtName)
 		}
@@ -285,7 +287,7 @@ func runRowErr(fmtName, entityPath string, entityMB float64, prof string, mi int
 	}
 }
 
-func metricsToRow(m transformer.GenMetrics) *MetricsRow {
+func metricsToRow(m transformer.GenMetrics, entityMB float64, before, after MemSnap) *MetricsRow {
 	return &MetricsRow{
 		PrefillTokPerSec: m.PrefillTokPerSec,
 		DecodeTokPerSec:  m.DecodeTokPerSec,
@@ -294,7 +296,26 @@ func metricsToRow(m transformer.GenMetrics) *MetricsRow {
 		GeneratedTokens:  m.GeneratedTokens,
 		PrefillMS:        m.PrefillTime.Milliseconds(),
 		DecodeMS:         m.DecodeTime.Milliseconds(),
+		TotalMS:          (m.PrefillTime + m.DecodeTime).Milliseconds(),
+		RSSMBBefore:      before.RSSMB,
+		RSSMBAfter:       after.RSSMB,
+		HeapAllocMB:      after.HeapAllocMB,
+		HeapSysMB:        after.HeapSysMB,
+		EntityMB:         entityMB,
 	}
+}
+
+func formatRunStats(m *MetricsRow) string {
+	if m == nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		" prefill=%.1f tok/s (%d, %dms) | decode=%.1f tok/s (%d, %dms) | total=%.1f tok/s | rss=%.0f→%.0f MB heap=%.0f MB entity=%.1f MB",
+		m.PrefillTokPerSec, m.PrefillTokens, m.PrefillMS,
+		m.DecodeTokPerSec, m.GeneratedTokens, m.DecodeMS,
+		m.TotalTokPerSec,
+		m.RSSMBBefore, m.RSSMBAfter, m.HeapAllocMB, m.EntityMB,
+	)
 }
 
 func summarize(log *ResultLog) {

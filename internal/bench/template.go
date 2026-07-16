@@ -64,7 +64,7 @@ type RunRow struct {
 	Metrics        *MetricsRow `json:"metrics,omitempty"`
 }
 
-// MetricsRow mirrors transformer.GenMetrics for JSON export.
+// MetricsRow mirrors transformer.GenMetrics for JSON export + host memory.
 type MetricsRow struct {
 	PrefillTokPerSec float64 `json:"prefill_tok_per_sec"`
 	DecodeTokPerSec  float64 `json:"decode_tok_per_sec"`
@@ -73,6 +73,13 @@ type MetricsRow struct {
 	GeneratedTokens  int     `json:"generated_tokens"`
 	PrefillMS        int64   `json:"prefill_ms"`
 	DecodeMS         int64   `json:"decode_ms"`
+	TotalMS          int64   `json:"total_ms"`
+
+	RSSMBBefore    float64 `json:"rss_mb_before"`
+	RSSMBAfter     float64 `json:"rss_mb_after"`
+	HeapAllocMB    float64 `json:"heap_alloc_mb_after"`
+	HeapSysMB      float64 `json:"heap_sys_mb_after"`
+	EntityMB       float64 `json:"entity_mb,omitempty"`
 }
 
 // Summary counts outcomes.
