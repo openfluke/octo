@@ -71,13 +71,16 @@ func Menu(in *bufio.Reader) {
 		src = "1"
 	}
 
-	// Detect hybrid MLX 1-bit early — pack format is forced to BinaryPacked g128.
+	// Detect MLX 1-bit early — pack format is forced to BinaryPacked g128.
 	forceBinary := false
 	if cfgPath := filepath.Join(snap.Dir, "config.json"); fileExistsLocal(cfgPath) {
 		if cfg, err := loadJSONMap(cfgPath); err == nil {
 			if hf.IsQwen35Hybrid(cfg) {
 				forceBinary = true
 				fmt.Println("\nDetected Qwen3.5 / Bonsai hybrid (MLX 1-bit) — packing BinaryPacked g128 (text-only).")
+			} else if bits, group, ok := hf.QuantBitsGroup(cfg); ok && bits == 1 && group == 128 {
+				forceBinary = true
+				fmt.Println("\nDetected dense Qwen3 / Bonsai-8B (MLX 1-bit) — packing BinaryPacked g128.")
 			}
 		}
 	}
