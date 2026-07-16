@@ -1,0 +1,6 @@
+octo_hub/
+octo_entities/
+*.part
+*.entity
+.DS_Store
+octo
