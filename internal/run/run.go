@@ -119,7 +119,6 @@ func Menu(in *bufio.Reader) {
 			fmt.Println("Bye.")
 			break
 		}
-		fmt.Print("Assistant: ")
 		reply, _, err := model.Generate(
 			encode, decode, turns, system, user,
 			transformer.GenOptions{MaxTokens: 128},
@@ -137,32 +136,46 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 	profiles := transformer.NamedProfiles()
 	fmt.Println("\nRun settings")
 	simdOK := simd.Enabled()
+	hybrid := model != nil && model.IsHybrid()
+	if hybrid {
+		fmt.Println("  (Qwen3.5/Bonsai — gpu_fuse = BinaryG128 WebGPU GEMV; GDN/attn ALU on host)")
+	}
+	defaultIdx := "4" // simd_mc
 	for i, p := range profiles {
 		note := ""
 		switch p.Name {
 		case "simd_sc", "simd_mc":
 			if !simdOK {
 				note = "  (unavailable on this GOARCH)"
-			} else if p.Name == "simd_mc" {
+			} else if p.Name == "simd_mc" && !hybrid {
 				note = "  ← default"
+			}
+		case "gpu_fuse":
+			if hybrid {
+				if webgpu.Available() {
+					note = "  ← default (resident BinaryG128 GEMV)"
+					defaultIdx = strconv.Itoa(i + 1)
+				} else {
+					note = "  (needs Vulkan adapter)"
+				}
+			} else if webgpu.Available() {
+				note = "  full-stack Q4 GPU decoder (Lucy WGPU path)"
+			} else {
+				note = "  (needs Vulkan/DX12/Metal adapter)"
+			}
+		case "gpu":
+			if !webgpu.Available() {
+				note = "  (needs Vulkan/DX12/Metal adapter)"
+			} else if hybrid {
+				note = "  BinaryG128 WebGPU GEMV (same as gpu_fuse for hybrid)"
 			}
 		case "simd_fuse":
 			if !simdOK {
 				note = "  (unavailable on this GOARCH)"
+			} else if hybrid {
+				note = "  BinaryG128 multicore CPU"
 			} else {
 				note = "  packed quant + SIMD fused (Lucy CPU path)"
-			}
-		case "gpu":
-			if webgpu.Available() {
-				note = "  (hybrid: dense + LM head GPU)"
-			} else {
-				note = "  (needs Vulkan/DX12/Metal adapter)"
-			}
-		case "gpu_fuse":
-			if webgpu.Available() {
-				note = "  full-stack Q4 GPU decoder (Lucy WGPU path)"
-			} else {
-				note = "  (needs Vulkan/DX12/Metal adapter)"
 			}
 		}
 		cores := "single-core"
@@ -173,10 +186,18 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 	}
 	fmt.Println("  tile: Dense MatVec tile size (Enter = 32)")
 
-	defaultIdx := "4" // simd_mc
-	if !simdOK {
+	if !simdOK && !(hybrid && webgpu.Available()) {
 		defaultIdx = "2" // cpu_mc fallback when SIMD kernels missing
 		fmt.Println("  (SIMD off → defaulting to cpu_mc)")
+	}
+	if hybrid && !webgpu.Available() && simdOK {
+		for i, p := range profiles {
+			if p.Name == "simd_fuse" {
+				defaultIdx = strconv.Itoa(i + 1)
+				fmt.Println("  (no WebGPU → defaulting to simd_fuse)")
+				break
+			}
+		}
 	}
 	choice := ui.Ask(in, "Profile: ", defaultIdx)
 	idx, err := strconv.Atoi(choice)

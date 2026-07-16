@@ -14,6 +14,7 @@ import (
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/ui"
 	"github.com/openfluke/welvet/entity"
+	"github.com/openfluke/welvet/hf"
 	"github.com/openfluke/welvet/quant"
 )
 
@@ -61,33 +62,49 @@ func Menu(in *bufio.Reader) {
 	}
 
 	fmt.Println("\nSource format")
-	fmt.Println("  [1] Safetensors (HF)  ← use this for SmolLM2 / most HF models")
+	fmt.Println("  [1] Safetensors (HF)  ← SmolLM2 / Qwen / Bonsai MLX 1-bit")
 	fmt.Println("  [2] GGUF")
 	fmt.Println("  (press Enter = Safetensors)")
 	src := ui.Ask(in, "Choice: ", "1")
 	if src == "?" || strings.EqualFold(src, "h") || strings.EqualFold(src, "help") {
-		fmt.Println("Safetensors = model.safetensors from HF. GGUF = .gguf file. Enter or 1 for Safetensors.")
+		fmt.Println("Safetensors = model.safetensors from HF (incl. Bonsai mlx-1bit). GGUF = .gguf file.")
 		src = "1"
 	}
 
-	formats := quant.AllFormats
-	fmt.Println("\nTarget pack format")
-	fmt.Println("  [0] none     (full precision FP32)")
-	fmt.Println("  [2] Q4_0     ← recommended for chat (Lucy-style; Enter)")
-	fmt.Println("  [l] list all formats (k-quants / IQ / BitNet)")
-	fi := ui.Ask(in, "Format: ", "2")
-	if fi == "l" || fi == "L" || fi == "?" {
-		for i, f := range formats {
-			fmt.Printf("  [%d] %s\n", i, f.String())
+	// Detect hybrid MLX 1-bit early — pack format is forced to BinaryPacked g128.
+	forceBinary := false
+	if cfgPath := filepath.Join(snap.Dir, "config.json"); fileExistsLocal(cfgPath) {
+		if cfg, err := loadJSONMap(cfgPath); err == nil {
+			if hf.IsQwen35Hybrid(cfg) {
+				forceBinary = true
+				fmt.Println("\nDetected Qwen3.5 / Bonsai hybrid (MLX 1-bit) — packing BinaryPacked g128 (text-only).")
+			}
 		}
-		fi = ui.Ask(in, "Format index [0]: ", "0")
 	}
-	fidx, err := strconv.Atoi(fi)
-	if err != nil || fidx < 0 || fidx >= len(formats) {
-		fmt.Println("Invalid format — use 0 for none")
-		return
+
+	formats := quant.AllFormats
+	var format quant.Format
+	if forceBinary {
+		format = quant.FormatBinaryPacked
+	} else {
+		fmt.Println("\nTarget pack format")
+		fmt.Println("  [0] none     (full precision FP32)")
+		fmt.Println("  [2] Q4_0     ← recommended for chat (Lucy-style; Enter)")
+		fmt.Println("  [l] list all formats (k-quants / IQ / BitNet)")
+		fi := ui.Ask(in, "Format: ", "2")
+		if fi == "l" || fi == "L" || fi == "?" {
+			for i, f := range formats {
+				fmt.Printf("  [%d] %s\n", i, f.String())
+			}
+			fi = ui.Ask(in, "Format index [0]: ", "0")
+		}
+		fidx, err := strconv.Atoi(fi)
+		if err != nil || fidx < 0 || fidx >= len(formats) {
+			fmt.Println("Invalid format — use 0 for none")
+			return
+		}
+		format = formats[fidx]
 	}
-	format := formats[fidx]
 
 	switch src {
 	case "2":
@@ -141,7 +158,7 @@ func convertSafetensors(snap catalog.Snapshot, format quant.Format) error {
 	if len(sts) == 0 {
 		return fmt.Errorf("no *.safetensors in %s", snap.Dir)
 	}
-	out := paths.EntityPath(snap.RepoID)
+	out := paths.EntityPathForFormat(snap.RepoID, format.String())
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err
 	}
@@ -232,6 +249,12 @@ func writeEnvelope(path string, meta map[string]any) error {
 func fileOK(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && !st.IsDir()
+}
+
+func fileExistsLocal(p string) bool { return fileOK(p) }
+
+func loadJSONMap(path string) (map[string]any, error) {
+	return hf.LoadConfigJSON(path)
 }
 
 func normalizeRepo(s string) string {
