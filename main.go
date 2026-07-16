@@ -14,6 +14,7 @@ import (
 	"github.com/openfluke/octo/internal/hub"
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/run"
+	"github.com/openfluke/octo/internal/tested"
 	"github.com/openfluke/octo/internal/ui"
 )
 
@@ -86,6 +87,7 @@ func interactive() {
 		fmt.Println("  [4] List local snapshots + entities")
 		fmt.Println("  [5] Quantize / re-pack existing .entity")
 		fmt.Println("  [6] Run benchmark template (JSON → logs/)")
+		fmt.Println("  [7] Tested models (download + convert)")
 		fmt.Println("  [q] Quit")
 		choice := ui.Ask(in, "Choice: ", "")
 		switch strings.ToLower(strings.TrimSpace(choice)) {
@@ -101,6 +103,8 @@ func interactive() {
 			convert.QuantizeMenu(in)
 		case "6":
 			benchMenu(in)
+		case "7":
+			tested.Menu(in)
 		case "q", "quit", "exit":
 			fmt.Println("bye")
 			return

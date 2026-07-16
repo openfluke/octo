@@ -24,6 +24,7 @@ func Menu(in *bufio.Reader) {
 	ents := catalog.ListEntities()
 	if len(ents) == 0 {
 		fmt.Println("No .entity files. Flow: [2] Download → [3] Convert → [1] Run.")
+		fmt.Println("Or menu [7] Tested models to auto download + convert known-good repos.")
 		fmt.Println("Example paste for download: HuggingFaceTB/SmolLM2-135M-Instruct")
 		return
 	}

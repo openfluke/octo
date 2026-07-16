@@ -176,7 +176,7 @@ func convertSafetensors(snap catalog.Snapshot, format quant.Format) error {
 	}
 	fmt.Printf("  Packing Safetensors → Welvet ENTITY (%s)…\n", label)
 	err := entity.PackFromHF(snap.Dir, out, entity.PackOptions{
-		Repo: snap.RepoID,
+		Repo:   snap.RepoID,
 		Format: format,
 		Progress: func(block, total int, detail string) {
 			if block == 0 {
@@ -196,6 +196,35 @@ func convertSafetensors(snap catalog.Snapshot, format quant.Format) error {
 	}
 	fmt.Println("   Next: menu [1] Run to chat.")
 	return nil
+}
+
+// DetectPackFormat chooses BinaryPacked for MLX 1-bit, else Q4_0.
+func DetectPackFormat(snapDir string) quant.Format {
+	cfgPath := filepath.Join(snapDir, "config.json")
+	if cfg, err := loadJSONMap(cfgPath); err == nil {
+		if hf.IsQwen35Hybrid(cfg) {
+			return quant.FormatBinaryPacked
+		}
+		if bits, group, ok := hf.QuantBitsGroup(cfg); ok && bits == 1 && group == 128 {
+			return quant.FormatBinaryPacked
+		}
+	}
+	return quant.FormatQ4_0
+}
+
+// PackRepo converts a local hub snapshot for repoID using auto-detected format.
+func PackRepo(repoID string) (entityPath string, err error) {
+	repoID = normalizeRepo(repoID)
+	dir := paths.ManualSnapshotDir(paths.HubRoot(), repoID)
+	if _, err := os.Stat(dir); err != nil {
+		return "", fmt.Errorf("no snapshot at %s (download first)", dir)
+	}
+	format := DetectPackFormat(dir)
+	snap := catalog.Snapshot{RepoID: repoID, Dir: dir}
+	if err := convertSafetensors(snap, format); err != nil {
+		return "", err
+	}
+	return paths.EntityPathForFormat(repoID, format.String()), nil
 }
 
 func convertGGUF(snap catalog.Snapshot, format quant.Format) error {

@@ -60,10 +60,43 @@ func DownloadMenu(in *bufio.Reader) {
 		fmt.Println("Cancelled")
 		return
 	}
-	snap := paths.ManualSnapshotDir(hubRoot, repo)
-	if err := os.MkdirAll(snap, 0o755); err != nil {
+	snap, err := downloadInto(client, hubRoot, repo, want)
+	if err != nil {
 		fmt.Printf("❌ %v\n", err)
 		return
+	}
+	fmt.Printf("\n✅ Snapshot ready:\n   %s\n", snap)
+	fmt.Println("Next: menu [3] Convert → .entity, then [1] Run.")
+}
+
+// DownloadRepo fetches a HF repo into the hub cache (skips existing files).
+// Used by the tested-models flow (no interactive confirm).
+func DownloadRepo(repo string) (snapDir string, err error) {
+	repo = normalizeRepo(repo)
+	if repo == "" {
+		return "", fmt.Errorf("empty repo id")
+	}
+	hubRoot := paths.HubRoot()
+	if err := os.MkdirAll(hubRoot, 0o755); err != nil {
+		return "", err
+	}
+	client := &http.Client{Timeout: 0}
+	files, err := listRepoFiles(client, repo)
+	if err != nil {
+		return "", err
+	}
+	want := selectDownloadable(files)
+	if len(want) == 0 {
+		return "", fmt.Errorf("no downloadable files in %s", repo)
+	}
+	fmt.Printf("  downloading %s (%d files)…\n", repo, len(want))
+	return downloadInto(client, hubRoot, repo, want)
+}
+
+func downloadInto(client *http.Client, hubRoot, repo string, want []treeEntry) (string, error) {
+	snap := paths.ManualSnapshotDir(hubRoot, repo)
+	if err := os.MkdirAll(snap, 0o755); err != nil {
+		return "", err
 	}
 	for i, f := range want {
 		dest := filepath.Join(snap, filepath.FromSlash(f.Path))
@@ -75,16 +108,14 @@ func DownloadMenu(in *bufio.Reader) {
 		fmt.Printf("  [%d/%d] %s …\n", i+1, len(want), f.Path)
 		t0 := time.Now()
 		if err := downloadFile(client, url, dest); err != nil {
-			fmt.Printf("❌ %s: %v\n", f.Path, err)
-			return
+			return "", fmt.Errorf("%s: %w", f.Path, err)
 		}
 		fmt.Printf("        ok (%v)\n", time.Since(t0).Round(time.Millisecond))
 	}
 	if err := writeRefsMain(hubRoot, repo); err != nil {
 		fmt.Printf("⚠️  refs/main: %v\n", err)
 	}
-	fmt.Printf("\n✅ Snapshot ready:\n   %s\n", snap)
-	fmt.Println("Next: menu [3] Convert → .entity, then [1] Run.")
+	return snap, nil
 }
 
 func normalizeRepo(s string) string {
