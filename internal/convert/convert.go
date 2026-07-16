@@ -72,11 +72,10 @@ func Menu(in *bufio.Reader) {
 
 	formats := quant.AllFormats
 	fmt.Println("\nTarget pack format")
-	fmt.Println("  [0] none     ← recommended (full precision; Enter)")
-	fmt.Println("  [1] Q8_0")
-	fmt.Println("  [3] Q4_0")
-	fmt.Println("  [l] list all formats")
-	fi := ui.Ask(in, "Format: ", "0")
+	fmt.Println("  [0] none     (full precision FP32)")
+	fmt.Println("  [2] Q4_0     ← recommended for chat (Lucy-style; Enter)")
+	fmt.Println("  [l] list all formats (k-quants / IQ / BitNet)")
+	fi := ui.Ask(in, "Format: ", "2")
 	if fi == "l" || fi == "L" || fi == "?" {
 		for i, f := range formats {
 			fmt.Printf("  [%d] %s\n", i, f.String())
@@ -147,11 +146,15 @@ func convertSafetensors(snap catalog.Snapshot, format quant.Format) error {
 		return err
 	}
 
-	if format != quant.FormatNone {
-		return fmt.Errorf("only FormatNone (index 0) is wired for real ENTITY pack this pass (got %s)", format.String())
+	if format != quant.FormatNone && !quant.Supported(format) {
+		return fmt.Errorf("unsupported pack format %s", format.String())
 	}
 
-	fmt.Println("  Packing Safetensors → Welvet ENTITY (FormatNone)…")
+	label := format.String()
+	if format == quant.FormatNone {
+		label = "FormatNone (FP32)"
+	}
+	fmt.Printf("  Packing Safetensors → Welvet ENTITY (%s)…\n", label)
 	err := entity.PackFromHF(snap.Dir, out, entity.PackOptions{
 		Repo: snap.RepoID,
 		Format: format,

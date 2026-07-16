@@ -40,9 +40,12 @@ Nothing is hardcoded as “the” model — presets are prompts only.
 
 - ✅ Interactive menu, `go run .`
 - ✅ HF download by pasted `org/name` (API tree → files)
-- ✅ Convert Safetensors → packed `.entity` (FormatNone / Float32)
+- ✅ Convert Safetensors → packed `.entity` (FP32 or baked quant — Q4_0 default)
 - ✅ Run / chat (greedy, host ALU) for Llama-style models e.g. SmolLM2-135M
+- ✅ Convert bakes **all k-quants / IQ / BitNet** into `.entity` at save (default Q4_0); tied LM head gets `transformer.lm_head.packed` (+H)
+- ✅ Run settings: `simd_fuse` / `gpu_fuse` use entity baked quant when present (no runtime repack); format picker only for FP32 entities
 - 🚧 Quantize / Q4 re-pack, GGUF import
-- 🚧 WebGPU generate, Top-K / temperature sampling
+- 🚧 Full fused GPU forward (Lucy-style); `gpu` today = dense projections + LM head on device, attn/norm/embed on host
+- 🚧 Top-K / temperature sampling
 
-SmolLM2-135M Instruct is a good first paste target (~270 MB safetensors → ~513 MB FormatNone `.entity`).
+SmolLM2-135M: ~270 MB safetensors → ~189 MB Q4_0 `.entity` (Lucy-sized) or ~513 MB FP32.

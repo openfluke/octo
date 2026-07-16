@@ -11,8 +11,11 @@ import (
 	"github.com/openfluke/octo/internal/catalog"
 	"github.com/openfluke/octo/internal/ui"
 	"github.com/openfluke/welvet/entity"
+	"github.com/openfluke/welvet/quant"
+	"github.com/openfluke/welvet/simd"
 	"github.com/openfluke/welvet/tokenizer"
 	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/webgpu"
 )
 
 // Menu picks a .entity and runs generate/chat.
@@ -26,12 +29,18 @@ func Menu(in *bufio.Reader) {
 	}
 	for i, e := range ents {
 		status := "?"
+		pack := ""
 		if e.Meta != nil {
 			if s, ok := e.Meta["status"].(string); ok {
 				status = s
 			}
+			if tr, ok := e.Meta["transformer"].(map[string]any); ok {
+				if pf, ok := tr["pack_format"].(string); ok && pf != "" {
+					pack = "  quant=" + pf
+				}
+			}
 		}
-		fmt.Printf("  [%d] %s  (status=%s, %d bytes)\n", i+1, e.RepoID, status, e.Bytes)
+		fmt.Printf("  [%d] %s  (status=%s, %d bytes%s)\n", i+1, e.RepoID, status, e.Bytes, pack)
 	}
 	choice := ui.Ask(in, "Choice: ", "1")
 	idx, err := strconv.Atoi(choice)
@@ -59,6 +68,22 @@ func Menu(in *bufio.Reader) {
 	if err != nil {
 		fmt.Printf("❌ Load entity: %v\n", err)
 		return
+	}
+
+	prof, ok := askExecProfile(in, model)
+	if !ok {
+		return
+	}
+	if err := model.ApplyExec(prof); err != nil {
+		fmt.Printf("❌ Exec profile: %v\n", err)
+		return
+	}
+	fmt.Printf("  exec: %s\n", prof.String())
+	if note := prof.GPUHybridNote(); note != "" {
+		fmt.Printf("  note: %s\n", note)
+	}
+	if note := prof.FusedNote(); note != "" {
+		fmt.Printf("  note: %s\n", note)
 	}
 
 	tokPath := model.TokenizerPath
@@ -103,4 +128,115 @@ func Menu(in *bufio.Reader) {
 		turns = append(turns, transformer.Turn{User: user, Assistant: reply})
 		_ = os.Stdout.Sync()
 	}
+}
+
+func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.ExecProfile, bool) {
+	profiles := transformer.NamedProfiles()
+	fmt.Println("\nRun settings")
+	simdOK := simd.Enabled()
+	for i, p := range profiles {
+		note := ""
+		switch p.Name {
+		case "simd_sc", "simd_mc":
+			if !simdOK {
+				note = "  (unavailable on this GOARCH)"
+			} else if p.Name == "simd_mc" {
+				note = "  ← default"
+			}
+		case "simd_fuse":
+			if !simdOK {
+				note = "  (unavailable on this GOARCH)"
+			} else {
+				note = "  packed quant + SIMD fused (Lucy CPU path)"
+			}
+		case "gpu":
+			if webgpu.Available() {
+				note = "  (hybrid: dense + LM head GPU)"
+			} else {
+				note = "  (needs Vulkan/DX12/Metal adapter)"
+			}
+		case "gpu_fuse":
+			if webgpu.Available() {
+				note = "  packed quant dense + LM head on GPU"
+			} else {
+				note = "  (needs Vulkan/DX12/Metal adapter)"
+			}
+		}
+		cores := "single-core"
+		if p.MultiCore {
+			cores = "multicore"
+		}
+		fmt.Printf("  [%d] %-8s  %s, %s%s\n", i+1, p.Name, p.Backend.String(), cores, note)
+	}
+	fmt.Println("  tile: Dense MatVec tile size (Enter = 32)")
+
+	defaultIdx := "4" // simd_mc
+	if !simdOK {
+		defaultIdx = "2" // cpu_mc fallback when SIMD kernels missing
+		fmt.Println("  (SIMD off → defaulting to cpu_mc)")
+	}
+	choice := ui.Ask(in, "Profile: ", defaultIdx)
+	idx, err := strconv.Atoi(choice)
+	if err != nil || idx < 1 || idx > len(profiles) {
+		fmt.Println("Invalid profile")
+		return transformer.ExecProfile{}, false
+	}
+	prof := profiles[idx-1]
+
+	tileStr := ui.Ask(in, "Tile size [32]: ", "32")
+	tile, err := strconv.Atoi(tileStr)
+	if err != nil || tile < 0 {
+		fmt.Println("Invalid tile size")
+		return transformer.ExecProfile{}, false
+	}
+	if tile == 0 {
+		tile = 32
+	}
+	prof.TileSize = tile
+
+	if prof.Fused {
+		if model.FusedPack {
+			prof.PackFormat = model.PackFormat
+			fmt.Printf("  using entity baked quant: %s\n", model.PackFormat.String())
+		} else {
+			format, ok := askPackFormat(in)
+			if !ok {
+				return transformer.ExecProfile{}, false
+			}
+			prof.PackFormat = format
+		}
+	}
+	return prof, true
+}
+
+func askPackFormat(in *bufio.Reader) (quant.Format, bool) {
+	formats := quant.AllFormats
+	fmt.Println("\nFused pack format (all k-quants / IQ / BitNet)")
+	fmt.Println("  [2] Q4_0  ← default (Lucy-style)")
+	fmt.Println("  [l] list all formats")
+	fi := ui.Ask(in, "Format: ", "2")
+	if fi == "l" || fi == "L" || fi == "?" {
+		for i, f := range formats {
+			if f == quant.FormatNone {
+				continue
+			}
+			fmt.Printf("  [%d] %s\n", i, f.String())
+		}
+		fi = ui.Ask(in, "Format index [2]: ", "2")
+	}
+	fidx, err := strconv.Atoi(fi)
+	if err != nil || fidx < 0 || fidx >= len(formats) {
+		fmt.Println("Invalid format")
+		return quant.FormatNone, false
+	}
+	format := formats[fidx]
+	if format == quant.FormatNone {
+		fmt.Println("Fused path needs a quant format (not none)")
+		return quant.FormatNone, false
+	}
+	if !quant.Supported(format) {
+		fmt.Printf("Format %s not supported yet\n", format)
+		return quant.FormatNone, false
+	}
+	return format, true
 }
