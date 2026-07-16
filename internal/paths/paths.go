@@ -3,6 +3,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // HubRoot is the Hugging Face–style hub cache (OCTO_HUB or ./octo_hub).
@@ -43,8 +44,31 @@ func ManualSnapshotDir(hubRoot, repoID string) string {
 	return filepath.Join(hubRoot, RepoDirName(repoID), "snapshots", "manual-download")
 }
 
-// EntityPath is entities/<org--name>.entity.
+// EntityPath is entities/<org--name>.entity (FormatNone / FP32).
 func EntityPath(repoID string) string {
 	name := replaceSlash(repoID) + ".entity"
 	return filepath.Join(EntitiesDir(), name)
+}
+
+// EntityPathForFormat is entities/<org--name>[--format].entity.
+// FormatNone uses EntityPath (no suffix).
+func EntityPathForFormat(repoID string, format string) string {
+	base := replaceSlash(repoID)
+	if format == "" || format == "none" {
+		return EntityPath(repoID)
+	}
+	return filepath.Join(EntitiesDir(), base+"--"+strings.ToLower(format)+".entity")
+}
+
+// EntityPathLegacyQ4 is the pre-template naming for Q4_0 packs (-q4.entity).
+func EntityPathLegacyQ4(repoID string) string {
+	return filepath.Join(EntitiesDir(), replaceSlash(repoID)+"-q4.entity")
+}
+
+// LogsDir is OCTO_LOGS or ./logs (relative to octo working directory).
+func LogsDir() string {
+	if v := os.Getenv("OCTO_LOGS"); v != "" {
+		return filepath.Clean(v)
+	}
+	return filepath.Join(".", "logs")
 }

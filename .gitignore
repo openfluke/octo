@@ -1,6 +1,8 @@
 octo_hub/
 octo_entities/
+logs/
 *.part
 *.entity
 .DS_Store
 octo
+templates/

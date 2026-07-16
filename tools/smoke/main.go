@@ -89,6 +89,9 @@ func runChat(entityPath, snap string) {
 	if note := prof.FusedNote(); note != "" {
 		fmt.Printf("note: %s\n", note)
 	}
+	if name := m.GPUAdapterName(); name != "" {
+		fmt.Printf("gpu: %s (fused full decoder)\n", name)
+	}
 	fmt.Print("Assistant: ")
 	reply, metrics, err := m.Generate(
 		func(text string, addSpecial bool) []uint32 { return tok.Encode(text, addSpecial) },

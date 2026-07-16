@@ -85,6 +85,9 @@ func Menu(in *bufio.Reader) {
 	if note := prof.FusedNote(); note != "" {
 		fmt.Printf("  note: %s\n", note)
 	}
+	if name := model.GPUAdapterName(); name != "" {
+		fmt.Printf("  gpu: %s (fused full decoder)\n", name)
+	}
 
 	tokPath := model.TokenizerPath
 	if tokPath == "" && model.Snapshot != "" {
@@ -157,7 +160,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 			}
 		case "gpu_fuse":
 			if webgpu.Available() {
-				note = "  packed quant dense + LM head on GPU"
+				note = "  full-stack Q4 GPU decoder (Lucy WGPU path)"
 			} else {
 				note = "  (needs Vulkan/DX12/Metal adapter)"
 			}
