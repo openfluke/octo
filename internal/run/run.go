@@ -108,18 +108,7 @@ func Menu(in *bufio.Reader) {
 		system = "You are a helpful assistant."
 	}
 
-	// Thinking models (Bonsai/Qwen3.5) burn many tokens in <think> before the answer.
-	maxDef := "1024"
-	if model.IsHybrid() {
-		maxDef = "2048"
-	}
-	maxStr := ui.Ask(in, fmt.Sprintf("Max new tokens [%s]: ", maxDef), maxDef)
-	maxTokens, err := strconv.Atoi(strings.TrimSpace(maxStr))
-	if err != nil || maxTokens <= 0 {
-		maxTokens, _ = strconv.Atoi(maxDef)
-	}
-
-	fmt.Printf("Chat started (max %d new tokens; blank line to quit). Streams tokens + tok/s like Lucy.\n", maxTokens)
+	fmt.Println("Chat started (blank line to quit). Streams tokens + tok/s like Lucy.")
 	var turns []transformer.Turn
 	encode := func(text string, addSpecial bool) []uint32 { return tok.Encode(text, addSpecial) }
 	decode := func(ids []uint32, skipSpecial bool) string { return tok.Decode(ids, skipSpecial) }
@@ -132,7 +121,7 @@ func Menu(in *bufio.Reader) {
 		}
 		reply, _, err := model.Generate(
 			encode, decode, turns, system, user,
-			transformer.GenOptions{MaxTokens: maxTokens},
+			transformer.GenOptions{MaxTokens: 128},
 		)
 		if err != nil {
 			fmt.Printf("\n❌ Generate: %v\n", err)
