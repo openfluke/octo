@@ -5,4 +5,3 @@ logs/
 *.entity
 .DS_Store
 octo
-templates/
