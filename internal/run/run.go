@@ -138,7 +138,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 	simdOK := simd.Enabled()
 	hybrid := model != nil && model.IsHybrid()
 	if hybrid {
-		fmt.Println("  (Qwen3.5/Bonsai — gpu_fuse = BinaryG128 WebGPU GEMV; GDN/attn ALU on host)")
+		fmt.Println("  (Qwen3.5/Bonsai — gpu_fuse = full BinaryG128 on-device fuse; needs ~8GB+ VRAM)")
 	}
 	defaultIdx := "4" // simd_mc
 	for i, p := range profiles {
@@ -153,7 +153,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 		case "gpu_fuse":
 			if hybrid {
 				if webgpu.Available() {
-					note = "  ← default (resident BinaryG128 GEMV)"
+					note = "  ← default (full BinaryG128 fuse, all weights on GPU)"
 					defaultIdx = strconv.Itoa(i + 1)
 				} else {
 					note = "  (needs Vulkan adapter)"
@@ -167,7 +167,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 			if !webgpu.Available() {
 				note = "  (needs Vulkan/DX12/Metal adapter)"
 			} else if hybrid {
-				note = "  BinaryG128 WebGPU GEMV (same as gpu_fuse for hybrid)"
+				note = "  host GDN/attn + WebGPU BinaryG128 GEMV (not full fuse)"
 			}
 		case "simd_fuse":
 			if !simdOK {
