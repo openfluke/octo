@@ -383,10 +383,6 @@ func skipProfile(name string, format quant.Format) string {
 		return "WebGPU unavailable"
 	case (name == "simd_fuse" || name == "gpu_fuse") && format == quant.FormatNone:
 		return "fused profiles need a quant format (not none)"
-	case name == "gpu_fuse" && format != quant.FormatQ4_0:
-		// Full on-device decoder (fusedgpu) is Q4_0-only. Other formats used to
-		// silently fall through to per-GEMV WebGPU (~3–5 tok/s) — not a real fuse.
-		return "full fused GPU is Q4_0-only (hybrid per-GEMV ~3–5 tok/s; use simd_fuse)"
 	}
 	p, ok := profileByName(name)
 	if !ok {

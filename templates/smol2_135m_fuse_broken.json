@@ -1,0 +1,18 @@
+{
+  "name": "smol2-135m-fuse-broken",
+  "model": {
+    "repo": "HuggingFaceTB/SmolLM2-135M-Instruct",
+    "download": false
+  },
+  "quantize": ["TernaryPacked", "BinaryPacked"],
+  "system_prompt": "You are a helpful assistant.",
+  "messages": [
+    "Say hi in one short sentence.",
+    "What is 2+2? Reply with just the number."
+  ],
+  "max_tokens": 16,
+  "profiles": ["simd_fuse", "gpu_fuse"],
+  "tile_size": 32,
+  "skip_convert_if_exists": true,
+  "force_convert": false
+}

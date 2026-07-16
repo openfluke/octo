@@ -27,7 +27,8 @@ JSON recipes for `./octo bench <name>`. One file per model / experiment — **no
 ## Examples
 
 ```bash
-./octo bench smol2_135m_fuse          # by name under templates/
+./octo bench smol2_135m_fuse          # all quants × simd_fuse + gpu_fuse
+./octo bench smol2_135m_fuse_broken   # TernaryPacked + BinaryPacked only (known ERRs)
 ./octo bench templates/foo.json       # by path
 ```
 
