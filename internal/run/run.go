@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -90,15 +89,7 @@ func Menu(in *bufio.Reader) {
 		fmt.Printf("  gpu: %s (fused full decoder)\n", name)
 	}
 
-	tokPath := model.TokenizerPath
-	if tokPath == "" && model.Snapshot != "" {
-		tokPath = filepath.Join(model.Snapshot, "tokenizer.json")
-	}
-	if tokPath == "" {
-		fmt.Println("❌ No tokenizer.json path in entity header or snapshot")
-		return
-	}
-	tok, err := tokenizer.LoadTokenizer(tokPath)
+	tok, err := tokenizer.LoadForEntity(e.Path, model.TokenizerPath, model.Snapshot, model.Repo)
 	if err != nil {
 		fmt.Printf("❌ Tokenizer: %v\n", err)
 		return

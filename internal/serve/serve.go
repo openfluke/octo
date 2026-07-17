@@ -13,6 +13,7 @@ import (
 
 	"github.com/openfluke/octo/internal/catalog"
 	"github.com/openfluke/octo/internal/paths"
+	"github.com/openfluke/welvet/entity"
 )
 
 // Options for the entity CDN.
@@ -47,8 +48,18 @@ func Run(opts Options) error {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
 			return
 		}
-		id := strings.TrimPrefix(r.URL.Path, "/v1/entities/")
-		id = filepath.Base(id)
+		rest := strings.TrimPrefix(r.URL.Path, "/v1/entities/")
+		rest = strings.Trim(rest, "/")
+		if rest == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if strings.HasSuffix(rest, "/tokenizer.json") {
+			id := filepath.Base(strings.TrimSuffix(rest, "/tokenizer.json"))
+			serveTokenizer(w, id)
+			return
+		}
+		id := filepath.Base(rest)
 		if id == "" || id == "." || id == ".." {
 			http.NotFound(w, r)
 			return
@@ -82,6 +93,7 @@ func Run(opts Options) error {
 	fmt.Println("  GET /v1/health")
 	fmt.Println("  GET /v1/entities")
 	fmt.Println("  GET /v1/entities/{id}")
+	fmt.Println("  GET /v1/entities/{id}/tokenizer.json")
 	return http.Serve(ln, mux)
 }
 
@@ -118,6 +130,76 @@ func listEntities() []entityRow {
 			ID: id, Name: e.RepoID, Path: e.Path, Size: e.Bytes,
 			Quant: quant, Arch: arch, RepoID: e.RepoID,
 		})
+	}
+	return out
+}
+
+func serveTokenizer(w http.ResponseWriter, id string) {
+	data, name, err := resolveTokenizerBytes(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	_, _ = w.Write(data)
+}
+
+func resolveTokenizerBytes(id string) ([]byte, string, error) {
+	entPath, err := resolveEntityFile(id)
+	if err != nil {
+		return nil, "", err
+	}
+	if ef, err := entity.Open(entPath); err == nil {
+		if data, err := ef.LoadTokenizerJSON(); err == nil && len(data) > 0 {
+			_ = ef.Close()
+			return data, "tokenizer.json", nil
+		}
+		_ = ef.Close()
+	}
+	for _, p := range tokenizerCandidates(entPath) {
+		data, err := os.ReadFile(p)
+		if err == nil && len(data) > 0 {
+			return data, "tokenizer.json", nil
+		}
+	}
+	return nil, "", fmt.Errorf("tokenizer.json not found for %s (need hub snapshot or re-convert)", id)
+}
+
+func tokenizerCandidates(entPath string) []string {
+	var out []string
+	ef, err := entity.Open(entPath)
+	if err != nil {
+		return out
+	}
+	defer ef.Close()
+	hdr := ef.Header()
+	if hdr == nil || hdr.Transformer == nil {
+		return out
+	}
+	tr := hdr.Transformer
+	if tr.Tokenizer != "" {
+		out = append(out, tr.Tokenizer)
+	}
+	if tr.Snapshot != "" {
+		out = append(out, filepath.Join(tr.Snapshot, "tokenizer.json"))
+	}
+	repo := tr.Repo
+	if repo == "" {
+		// legacy filename → org/name guess
+		base := strings.TrimSuffix(filepath.Base(entPath), ".entity")
+		base = strings.Split(base, "--q")[0]
+		base = strings.Split(base, "-q")[0]
+		base = strings.Split(base, "--iq")[0]
+		base = strings.Split(base, "--binary")[0]
+		base = strings.Split(base, "--ternary")[0]
+		if strings.Contains(base, "--") {
+			repo = strings.Replace(base, "--", "/", 1)
+		}
+	}
+	if repo != "" {
+		out = append(out, filepath.Join(paths.ManualSnapshotDir(paths.HubRoot(), repo), "tokenizer.json"))
 	}
 	return out
 }
