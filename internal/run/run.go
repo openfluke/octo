@@ -102,9 +102,22 @@ func Menu(in *bufio.Reader) {
 		system = "You are a helpful assistant."
 	}
 
-	// Thinking models (Bonsai/Qwen3.5) burn many tokens in <think> before the answer.
+	enableThinking := false
+	if model.SupportsThinking() {
+		fmt.Println("  (Bonsai/Qwen3 — 1=think on, 0=off)")
+		th := ui.Ask(in, "Thinking [0]: ", "0")
+		th = strings.ToLower(strings.TrimSpace(th))
+		enableThinking = th == "1" || th == "on" || th == "y" || th == "yes" || th == "true"
+		if enableThinking {
+			fmt.Println("  thinking: 1 (/think soft switch; auto-close if stuck)")
+		} else {
+			fmt.Println("  thinking: 0 (empty <think></think> hard-switch)")
+		}
+	}
+
+	// Thinking burns tokens before the visible answer.
 	maxDef := "1024"
-	if model.IsHybrid() {
+	if model.IsHybrid() || enableThinking {
 		maxDef = "2048"
 	}
 	maxStr := ui.Ask(in, fmt.Sprintf("Max new tokens [%s]: ", maxDef), maxDef)
@@ -126,7 +139,7 @@ func Menu(in *bufio.Reader) {
 		}
 		reply, _, err := model.Generate(
 			encode, decode, turns, system, user,
-			transformer.GenOptions{MaxTokens: maxTokens},
+			transformer.GenOptions{MaxTokens: maxTokens, EnableThinking: enableThinking},
 		)
 		if err != nil {
 			fmt.Printf("\n❌ Generate: %v\n", err)
@@ -143,7 +156,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 	simdOK := simd.Enabled()
 	hybrid := model != nil && model.IsHybrid()
 	if hybrid {
-		fmt.Println("  (Bonsai/Qwen3 BinaryG128 — prefer gpu_fuse; empty <think> hard-switch for chat)")
+		fmt.Println("  (Bonsai/Qwen3 BinaryG128 — prefer gpu_fuse; thinking toggle asked after mount)")
 	}
 	defaultIdx := "4" // simd_mc
 	for i, p := range profiles {
