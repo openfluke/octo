@@ -150,7 +150,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 	simdOK := simd.Enabled()
 	hybrid := model != nil && model.IsHybrid()
 	if hybrid {
-		fmt.Println("  (Qwen3.5/Bonsai — gpu_fuse = full BinaryG128 on-device fuse; needs ~8GB+ VRAM)")
+		fmt.Println("  (Bonsai/Qwen3 BinaryG128 — prefer gpu_fuse; empty <think> hard-switch for chat)")
 	}
 	defaultIdx := "4" // simd_mc
 	for i, p := range profiles {
@@ -185,7 +185,7 @@ func askExecProfile(in *bufio.Reader, model *transformer.Model) (transformer.Exe
 			if !simdOK {
 				note = "  (unavailable on this GOARCH)"
 			} else if hybrid {
-				note = "  BinaryG128 multicore CPU"
+				note = "  BinaryG128 exact float CPU (prefer gpu_fuse)"
 			} else {
 				note = "  packed quant + SIMD fused (Lucy CPU path)"
 			}

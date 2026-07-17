@@ -75,8 +75,7 @@ func Menu(in *bufio.Reader) {
 }
 
 func prepareOne(m Model) error {
-	// Skip full pipeline if a packed entity already exists.
-	if path := findExistingEntity(m.Repo); path != "" {
+	if path := findExistingEntity(m); path != "" {
 		fmt.Printf("  already have entity: %s (skip download/convert)\n", path)
 		return nil
 	}
@@ -91,12 +90,20 @@ func prepareOne(m Model) error {
 	return nil
 }
 
-func findExistingEntity(repo string) string {
-	candidates := []string{
-		paths.EntityPathForFormat(repo, "binarypacked"),
-		paths.EntityPathForFormat(repo, "q4_0"),
-		paths.EntityPath(repo),
-		paths.EntityPathLegacyQ4(repo),
+func findExistingEntity(m Model) string {
+	var candidates []string
+	if m.FormatHint != "" {
+		candidates = append(candidates, paths.EntityPathForFormat(m.Repo, m.FormatHint))
+		if m.FormatHint == "q4_0" {
+			candidates = append(candidates, paths.EntityPathLegacyQ4(m.Repo))
+		}
+	} else {
+		candidates = []string{
+			paths.EntityPathForFormat(m.Repo, "binarypacked"),
+			paths.EntityPathForFormat(m.Repo, "q4_0"),
+			paths.EntityPath(m.Repo),
+			paths.EntityPathLegacyQ4(m.Repo),
+		}
 	}
 	for _, p := range candidates {
 		if st, err := os.Stat(p); err == nil && st.Size() > 1024 {
@@ -107,8 +114,13 @@ func findExistingEntity(repo string) string {
 }
 
 func entityStatus(repo string) string {
-	if p := findExistingEntity(repo); p != "" {
-		return "[entity ready]"
+	for _, m := range Models {
+		if m.Repo == repo {
+			if p := findExistingEntity(m); p != "" {
+				return "[entity ready]"
+			}
+			break
+		}
 	}
 	snap := paths.ManualSnapshotDir(paths.HubRoot(), repo)
 	if st, err := os.Stat(snap); err == nil && st.IsDir() {
