@@ -24,7 +24,16 @@ Paste a Hugging Face repo (e.g. `HuggingFaceTB/SmolLM2-135M-Instruct`), download
 | **3** | Convert snapshot → `.entity` (Safetensors / GGUF) |
 | **4** | List local hub snapshots + entities |
 | **5** | Quantize / re-pack an existing `.entity` |
+| **6** | Run benchmark template |
+| **7** | Tested models (download + convert) |
+| **8** | Generate image (Flux2 / Bonsai) |
+| **9** | Generate speech (MOSS-TTS-Nano) |
 | **q** | Quit |
+
+```bash
+./octo image "a red bicycle"   # → octo_outputs/*.png (GPU)
+./octo speak "Hello."          # → octo_outputs/*.wav (CPU; see welvet/mosstts/README.md)
+```
 
 Nothing is hardcoded as “the” model — presets are prompts only.
 

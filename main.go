@@ -15,6 +15,7 @@ import (
 	"github.com/openfluke/octo/internal/imagegen"
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/run"
+	"github.com/openfluke/octo/internal/speech"
 	"github.com/openfluke/octo/internal/tested"
 	"github.com/openfluke/octo/internal/ui"
 )
@@ -50,6 +51,17 @@ func main() {
 			}
 			if err := imagegen.RunCLI(prompt, h, w, steps, seed); err != nil {
 				fmt.Fprintf(os.Stderr, "image: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "speak":
+			text, ref, frames, seed, doSample, fuseSIMD, fuseGPU := parseSpeakArgs(os.Args[2:])
+			if text == "" {
+				fmt.Fprintln(os.Stderr, `usage: octo speak "text" [--ref wav] [--frames 300] [--seed 42] [--greedy] [--simd] [--gpu]`)
+				os.Exit(2)
+			}
+			if err := speech.RunCLI(text, ref, frames, doSample, seed, fuseSIMD, fuseGPU); err != nil {
+				fmt.Fprintf(os.Stderr, "speak: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -99,11 +111,56 @@ func parseImageArgs(args []string) (prompt string, h, w, steps int, seed int64) 
 	return prompt, h, w, steps, seed
 }
 
+func parseSpeakArgs(args []string) (text, ref string, frames int, seed int64, doSample, fuseSIMD, fuseGPU bool) {
+	frames, seed, doSample, fuseSIMD = 300, 42, true, true
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--ref":
+			i++
+			if i < len(args) {
+				ref = args[i]
+			}
+		case a == "--frames":
+			i++
+			if i < len(args) {
+				frames, _ = strconv.Atoi(args[i])
+			}
+		case a == "--seed":
+			i++
+			if i < len(args) {
+				seed, _ = strconv.ParseInt(args[i], 10, 64)
+			}
+		case a == "--greedy":
+			doSample = false
+		case a == "--simd":
+			fuseSIMD = true
+		case a == "--no-simd":
+			fuseSIMD = false
+		case a == "--gpu":
+			fuseGPU = true
+		case a == "--no-gpu":
+			fuseGPU = false
+		case strings.HasPrefix(a, "-"):
+			// ignore
+		default:
+			if text == "" {
+				text = a
+			} else {
+				text += " " + a
+			}
+		}
+	}
+	return text, ref, frames, seed, doSample, fuseSIMD, fuseGPU
+}
+
 func printHelp() {
 	fmt.Println("Octo — Welvet model shell")
 	fmt.Println("  ./octo                         interactive menu")
 	fmt.Println("  ./octo image \"prompt\" [opts]    generate PNG → octo_outputs/ (GPU required)")
 	fmt.Println("      -h/-w/-s N  --seed N")
+	fmt.Println("  ./octo speak \"text\" [opts]      generate WAV → octo_outputs/")
+	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
 	fmt.Println("  ./octo bench <tpl.json|name>   run JSON benchmark → logs/")
 	fmt.Println("  ./octo help                    this message")
 	fmt.Println()
@@ -142,6 +199,7 @@ func interactive() {
 		fmt.Println("  [6] Run benchmark template (JSON → logs/)")
 		fmt.Println("  [7] Tested models (download + convert)")
 		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
+		fmt.Println("  [9] Generate speech (MOSS-TTS-Nano)")
 		fmt.Println("  [q] Quit")
 		choice := ui.Ask(in, "Choice: ", "")
 		switch strings.ToLower(strings.TrimSpace(choice)) {
@@ -161,6 +219,8 @@ func interactive() {
 			tested.Menu(in)
 		case "8":
 			imagegen.Menu(in)
+		case "9":
+			speech.Menu(in)
 		case "q", "quit", "exit":
 			fmt.Println("bye")
 			return

@@ -185,9 +185,13 @@ func selectDownloadable(entries []treeEntry) []treeEntry {
 			base == "scheduler_config.json",
 			base == "quantization_config.json",
 			base == "manifest.json",
+			base == "tokenizer.model",
+			base == "pytorch_model.bin",
 			strings.HasSuffix(lower, ".safetensors"),
 			strings.HasSuffix(lower, ".gguf"),
 			strings.HasSuffix(lower, ".ggml"),
+			strings.HasSuffix(lower, ".bin"),
+			strings.HasSuffix(lower, ".model"),
 			strings.HasSuffix(lower, ".jinja"):
 			out = append(out, e)
 		}

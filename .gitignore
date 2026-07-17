@@ -6,3 +6,6 @@ logs/
 *.entity
 .DS_Store
 octo
+__pycache__/
+*.py[cod]
+*$py.class
