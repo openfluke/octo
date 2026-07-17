@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openfluke/octo/internal/catalog"
@@ -21,12 +24,151 @@ type Options struct {
 	Addr string // default :7878
 }
 
-// Run starts an HTTP server hosting local .entity files for FinchKit phones.
-func Run(opts Options) error {
+// Status is the live CDN listener state (FinchKit + CLI).
+type Status struct {
+	Listening   bool     `json:"listening"`
+	Addr        string   `json:"addr,omitempty"`
+	Port        int      `json:"port,omitempty"`
+	URLs        []string `json:"urls,omitempty"`
+	EntitiesDir string   `json:"entities_dir,omitempty"`
+	EntityCount int      `json:"entity_count"`
+	Error       string   `json:"error,omitempty"`
+}
+
+var (
+	serveMu   sync.Mutex
+	httpSrv   *http.Server
+	listener  net.Listener
+	serveAddr string
+	serveErr  string
+)
+
+// Start begins serving local .entity files (non-blocking). Idempotent if already up.
+func Start(opts Options) error {
+	serveMu.Lock()
+	defer serveMu.Unlock()
+	if listener != nil {
+		return nil
+	}
 	addr := strings.TrimSpace(opts.Addr)
 	if addr == "" {
 		addr = ":7878"
 	}
+	mux := newMux(addr)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		serveErr = err.Error()
+		return err
+	}
+	srv := &http.Server{Handler: mux}
+	listener = ln
+	httpSrv = srv
+	serveAddr = ln.Addr().String()
+	serveErr = ""
+	go func() {
+		err := srv.Serve(ln)
+		serveMu.Lock()
+		defer serveMu.Unlock()
+		if err != nil && err != http.ErrServerClosed {
+			serveErr = err.Error()
+		}
+		if listener == ln {
+			listener = nil
+			httpSrv = nil
+			serveAddr = ""
+		}
+	}()
+	return nil
+}
+
+// Stop shuts down the CDN listener.
+func Stop() error {
+	serveMu.Lock()
+	srv := httpSrv
+	ln := listener
+	httpSrv = nil
+	listener = nil
+	serveAddr = ""
+	serveMu.Unlock()
+	if srv == nil {
+		if ln != nil {
+			_ = ln.Close()
+		}
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	err := srv.Shutdown(ctx)
+	if err != nil {
+		_ = srv.Close()
+	}
+	return err
+}
+
+// GetStatus snapshots the CDN listener.
+func GetStatus() Status {
+	serveMu.Lock()
+	listening := listener != nil
+	addr := serveAddr
+	errMsg := serveErr
+	serveMu.Unlock()
+
+	st := Status{
+		Listening:   listening,
+		Addr:        addr,
+		EntitiesDir: paths.EntitiesDir(),
+		Error:       errMsg,
+	}
+	if matches, err := filepath.Glob(filepath.Join(paths.EntitiesDir(), "*.entity")); err == nil {
+		st.EntityCount = len(matches)
+	}
+	if listening && addr != "" {
+		_, portStr, err := net.SplitHostPort(addr)
+		if err == nil {
+			if p, perr := strconv.Atoi(portStr); perr == nil {
+				st.Port = p
+			}
+		}
+		port := st.Port
+		if port == 0 {
+			port = 7878
+		}
+		for _, ip := range localIPv4s() {
+			st.URLs = append(st.URLs, fmt.Sprintf("http://%s:%d", ip, port))
+		}
+		if len(st.URLs) == 0 {
+			st.URLs = append(st.URLs, fmt.Sprintf("http://127.0.0.1:%d", port))
+		}
+	}
+	return st
+}
+
+// StatusJSON is GetStatus encoded for FFI.
+func StatusJSON() string {
+	b, _ := json.Marshal(GetStatus())
+	return string(b)
+}
+
+// Run starts an HTTP server hosting local .entity files (blocking; CLI).
+func Run(opts Options) error {
+	if err := Start(opts); err != nil {
+		return err
+	}
+	st := GetStatus()
+	fmt.Printf("Octo entity CDN listening on http://%s\n", st.Addr)
+	fmt.Printf("  entities: %s\n", st.EntitiesDir)
+	for _, u := range st.URLs {
+		fmt.Printf("  LAN: %s  (FinchKit → Find on LAN / ping)\n", u)
+	}
+	fmt.Println("  GET /v1/health  (also /v1/ping)")
+	fmt.Println("  GET /v1/entities")
+	fmt.Println("  GET /v1/entities/{id}")
+	fmt.Println("  GET /v1/entities/{id}/tokenizer.json")
+	// Block until process exit (Serve already running in goroutine).
+	select {}
+}
+
+func newMux(addr string) *http.ServeMux {
 	mux := http.NewServeMux()
 	health := func(w http.ResponseWriter, r *http.Request) {
 		host, _ := os.Hostname()
@@ -45,7 +187,7 @@ func Run(opts Options) error {
 		})
 	}
 	mux.HandleFunc("/v1/health", health)
-	mux.HandleFunc("/v1/ping", health) // alias for LAN discovery (mvp parity)
+	mux.HandleFunc("/v1/ping", health)
 	mux.HandleFunc("/v1/entities", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
@@ -93,22 +235,7 @@ func Run(opts Options) error {
 		}
 		_, _ = io.Copy(w, f)
 	})
-
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Octo entity CDN listening on http://%s\n", ln.Addr().String())
-	fmt.Printf("  entities: %s\n", paths.EntitiesDir())
-	for _, ip := range localIPv4s() {
-		port := ln.Addr().(*net.TCPAddr).Port
-		fmt.Printf("  LAN: http://%s:%d  (FinchKit → Find on LAN / ping)\n", ip, port)
-	}
-	fmt.Println("  GET /v1/health  (also /v1/ping)")
-	fmt.Println("  GET /v1/entities")
-	fmt.Println("  GET /v1/entities/{id}")
-	fmt.Println("  GET /v1/entities/{id}/tokenizer.json")
-	return http.Serve(ln, mux)
+	return mux
 }
 
 func localIPv4s() []string {
@@ -169,8 +296,6 @@ func listEntities() []entityRow {
 				}
 			}
 		}
-		// Do not SHA256 full .entity files here — catalog can be multi‑GB and
-		// hashing on every GET /v1/entities freezes FinchKit Browse.
 		out = append(out, entityRow{
 			ID: id, Name: e.RepoID, Path: e.Path, Size: e.Bytes,
 			Quant: quant, Arch: arch, RepoID: e.RepoID,
@@ -232,7 +357,6 @@ func tokenizerCandidates(entPath string) []string {
 	}
 	repo := tr.Repo
 	if repo == "" {
-		// legacy filename → org/name guess
 		base := strings.TrimSuffix(filepath.Base(entPath), ".entity")
 		base = strings.Split(base, "--q")[0]
 		base = strings.Split(base, "-q")[0]
