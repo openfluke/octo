@@ -71,10 +71,25 @@ func Menu(in *bufio.Reader) {
 		}
 		ok++
 	}
-	fmt.Printf("\nDone: %d ok, %d failed. Menu [1] Run to chat.\n", ok, fail)
+	fmt.Printf("\nDone: %d ok, %d failed.\n", ok, fail)
+	fmt.Println("  Chat models → menu [1] Run.  Image models → menu [8] Generate image.")
 }
 
 func prepareOne(m Model) error {
+	if m.ImageGen {
+		snap := paths.ManualSnapshotDir(paths.HubRoot(), m.Repo)
+		if st, err := os.Stat(snap); err == nil && st.IsDir() {
+			fmt.Printf("  already have snapshot: %s\n", snap)
+			fmt.Println("  (image model — skip .entity convert; use menu [8] Generate image)")
+			return nil
+		}
+		if _, err := hub.DownloadRepo(m.Repo); err != nil {
+			return fmt.Errorf("download: %w", err)
+		}
+		fmt.Printf("  snapshot ready: %s\n", paths.ManualSnapshotDir(paths.HubRoot(), m.Repo))
+		fmt.Println("  Next: menu [8] Generate image (Flux2 / Bonsai Image)")
+		return nil
+	}
 	if path := findExistingEntity(m); path != "" {
 		fmt.Printf("  already have entity: %s (skip download/convert)\n", path)
 		return nil
@@ -116,6 +131,13 @@ func findExistingEntity(m Model) string {
 func entityStatus(repo string) string {
 	for _, m := range Models {
 		if m.Repo == repo {
+			if m.ImageGen {
+				snap := paths.ManualSnapshotDir(paths.HubRoot(), repo)
+				if st, err := os.Stat(snap); err == nil && st.IsDir() {
+					return "[image snapshot]"
+				}
+				return "[not local]"
+			}
 			if p := findExistingEntity(m); p != "" {
 				return "[entity ready]"
 			}

@@ -12,6 +12,7 @@ import (
 	"github.com/openfluke/octo/internal/catalog"
 	"github.com/openfluke/octo/internal/convert"
 	"github.com/openfluke/octo/internal/hub"
+	"github.com/openfluke/octo/internal/imagegen"
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/run"
 	"github.com/openfluke/octo/internal/tested"
@@ -40,6 +41,18 @@ func main() {
 			}
 			fmt.Println(out)
 			return
+		case "image":
+			// octo image "a red bicycle" [-h 256] [-w 256] [-s 4] [--seed 42]
+			prompt, h, w, steps, seed := parseImageArgs(os.Args[2:])
+			if prompt == "" {
+				fmt.Fprintln(os.Stderr, `usage: octo image "prompt" [-h 256] [-w 256] [-s 4] [--seed 42]`)
+				os.Exit(2)
+			}
+			if err := imagegen.RunCLI(prompt, h, w, steps, seed); err != nil {
+				fmt.Fprintf(os.Stderr, "image: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "help", "-h", "--help":
 			printHelp()
 			return
@@ -48,9 +61,49 @@ func main() {
 	interactive()
 }
 
+func parseImageArgs(args []string) (prompt string, h, w, steps int, seed int64) {
+	h, w, steps, seed = 256, 256, 4, 42
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "-h" || a == "--height":
+			i++
+			if i < len(args) {
+				h, _ = strconv.Atoi(args[i])
+			}
+		case a == "-w" || a == "--width":
+			i++
+			if i < len(args) {
+				w, _ = strconv.Atoi(args[i])
+			}
+		case a == "-s" || a == "--steps":
+			i++
+			if i < len(args) {
+				steps, _ = strconv.Atoi(args[i])
+			}
+		case a == "--seed":
+			i++
+			if i < len(args) {
+				seed, _ = strconv.ParseInt(args[i], 10, 64)
+			}
+		case strings.HasPrefix(a, "-"):
+			// ignore unknown flags
+		default:
+			if prompt == "" {
+				prompt = a
+			} else {
+				prompt += " " + a
+			}
+		}
+	}
+	return prompt, h, w, steps, seed
+}
+
 func printHelp() {
 	fmt.Println("Octo — Welvet model shell")
 	fmt.Println("  ./octo                         interactive menu")
+	fmt.Println("  ./octo image \"prompt\" [opts]    generate PNG → octo_outputs/ (GPU required)")
+	fmt.Println("      -h/-w/-s N  --seed N")
 	fmt.Println("  ./octo bench <tpl.json|name>   run JSON benchmark → logs/")
 	fmt.Println("  ./octo help                    this message")
 	fmt.Println()
@@ -88,6 +141,7 @@ func interactive() {
 		fmt.Println("  [5] Quantize / re-pack existing .entity")
 		fmt.Println("  [6] Run benchmark template (JSON → logs/)")
 		fmt.Println("  [7] Tested models (download + convert)")
+		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
 		fmt.Println("  [q] Quit")
 		choice := ui.Ask(in, "Choice: ", "")
 		switch strings.ToLower(strings.TrimSpace(choice)) {
@@ -105,6 +159,8 @@ func interactive() {
 			benchMenu(in)
 		case "7":
 			tested.Menu(in)
+		case "8":
+			imagegen.Menu(in)
 		case "q", "quit", "exit":
 			fmt.Println("bye")
 			return

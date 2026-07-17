@@ -7,6 +7,8 @@ type Model struct {
 	Note   string // one-line capability / VRAM hint
 	// FormatHint is empty to auto-detect after download (MLX 1-bit → BinaryPacked, else Q4_0).
 	FormatHint string
+	// ImageGen skips .entity convert; use menu [8] Flux2 image generation instead.
+	ImageGen bool
 }
 
 // Models are entities that have been exercised on the Welvet/Octo path.
@@ -40,5 +42,11 @@ var Models = []Model{
 		Title:      "Bonsai-27B hybrid",
 		Note:       "BinaryG128 GDN hybrid — needs ~8GB+ VRAM for gpu_fuse",
 		FormatHint: "binarypacked",
+	},
+	{
+		Repo:     "prism-ml/bonsai-image-binary-4B-mlx-1bit",
+		Title:    "Bonsai Image 4B",
+		Note:     "Image gen / Flux2 Klein — menu [8]; not a chat .entity",
+		ImageGen: true,
 	},
 }

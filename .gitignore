@@ -1,5 +1,6 @@
 octo_hub/
 octo_entities/
+octo_outputs/
 logs/
 *.part
 *.entity

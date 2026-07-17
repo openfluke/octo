@@ -72,3 +72,11 @@ func LogsDir() string {
 	}
 	return filepath.Join(".", "logs")
 }
+
+// OutputsDir holds generated images (OCTO_OUTPUTS or ./octo_outputs).
+func OutputsDir() string {
+	if v := os.Getenv("OCTO_OUTPUTS"); v != "" {
+		return filepath.Clean(v)
+	}
+	return filepath.Join(".", "octo_outputs")
+}

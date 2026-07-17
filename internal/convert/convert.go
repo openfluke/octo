@@ -61,6 +61,14 @@ func Menu(in *bufio.Reader) {
 		return
 	}
 
+	if isFlux2Klein(snap.Dir) {
+		fmt.Println("\nDetected Flux2KleinPipeline (model_index.json).")
+		fmt.Println("  This is an image model — not converted to a chat .entity.")
+		fmt.Println("  Use menu [8] Generate image (Flux2 / Bonsai Image).")
+		fmt.Println("  Snapshot layout: transformer-packed-mflux/, text_encoder-mlx-4bit/, vae/, tokenizer/")
+		return
+	}
+
 	fmt.Println("\nSource format")
 	fmt.Println("  [1] Safetensors (HF)  ← SmolLM2 / Qwen / Bonsai MLX 1-bit")
 	fmt.Println("  [2] GGUF")
@@ -219,6 +227,9 @@ func PackRepo(repoID string) (entityPath string, err error) {
 	if _, err := os.Stat(dir); err != nil {
 		return "", fmt.Errorf("no snapshot at %s (download first)", dir)
 	}
+	if isFlux2Klein(dir) {
+		return "", fmt.Errorf("%s is Flux2KleinPipeline — use menu [8] image gen, not .entity convert", repoID)
+	}
 	format := DetectPackFormat(dir)
 	snap := catalog.Snapshot{RepoID: repoID, Dir: dir}
 	if err := convertSafetensors(snap, format); err != nil {
@@ -294,4 +305,14 @@ func normalizeRepo(s string) string {
 	s = strings.TrimPrefix(s, "https://huggingface.co/")
 	s = strings.Trim(s, "/")
 	return s
+}
+
+func isFlux2Klein(snapDir string) bool {
+	cfgPath := filepath.Join(snapDir, "model_index.json")
+	cfg, err := loadJSONMap(cfgPath)
+	if err != nil {
+		return false
+	}
+	name, _ := cfg["_class_name"].(string)
+	return name == "Flux2KleinPipeline"
 }

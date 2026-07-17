@@ -179,10 +179,16 @@ func selectDownloadable(entries []treeEntry) []treeEntry {
 			base == "special_tokens_map.json",
 			base == "vocab.json",
 			base == "merges.txt",
+			base == "added_tokens.json",
 			base == "model.safetensors.index.json",
+			base == "model_index.json",
+			base == "scheduler_config.json",
+			base == "quantization_config.json",
+			base == "manifest.json",
 			strings.HasSuffix(lower, ".safetensors"),
 			strings.HasSuffix(lower, ".gguf"),
-			strings.HasSuffix(lower, ".ggml"):
+			strings.HasSuffix(lower, ".ggml"),
+			strings.HasSuffix(lower, ".jinja"):
 			out = append(out, e)
 		}
 	}
