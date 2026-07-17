@@ -89,11 +89,7 @@ func Menu(in *bufio.Reader) {
 		fmt.Printf("  gpu: %s (fused full decoder)\n", name)
 	}
 	fp := model.MemFootprint()
-	fmt.Printf("  mem: %s", fp.String())
-	if fp.WeightsMB > 0 {
-		fmt.Printf(" (host weights ~%.0f MB)", fp.WeightsMB)
-	}
-	fmt.Println()
+	fmt.Printf("  mem: %s\n", fp.String())
 
 	tok, err := tokenizer.LoadForEntity(e.Path, model.TokenizerPath, model.Snapshot, model.Repo)
 	if err != nil {
