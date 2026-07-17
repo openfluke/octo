@@ -28,14 +28,24 @@ func Run(opts Options) error {
 		addr = ":7878"
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/health", func(w http.ResponseWriter, r *http.Request) {
+	health := func(w http.ResponseWriter, r *http.Request) {
+		host, _ := os.Hostname()
+		entityCount := 0
+		if matches, err := filepath.Glob(filepath.Join(paths.EntitiesDir(), "*.entity")); err == nil {
+			entityCount = len(matches)
+		}
 		writeJSON(w, map[string]any{
-			"ok":       true,
-			"service":  "octo-serve",
-			"entities": paths.EntitiesDir(),
-			"time":     time.Now().UTC().Format(time.RFC3339),
+			"ok":           true,
+			"service":      "octo-serve",
+			"hostname":     host,
+			"addr":         addr,
+			"entities_dir": paths.EntitiesDir(),
+			"entity_count": entityCount,
+			"time":         time.Now().UTC().Format(time.RFC3339),
 		})
-	})
+	}
+	mux.HandleFunc("/v1/health", health)
+	mux.HandleFunc("/v1/ping", health) // alias for LAN discovery (mvp parity)
 	mux.HandleFunc("/v1/entities", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method", http.StatusMethodNotAllowed)
@@ -90,11 +100,46 @@ func Run(opts Options) error {
 	}
 	fmt.Printf("Octo entity CDN listening on http://%s\n", ln.Addr().String())
 	fmt.Printf("  entities: %s\n", paths.EntitiesDir())
-	fmt.Println("  GET /v1/health")
+	for _, ip := range localIPv4s() {
+		port := ln.Addr().(*net.TCPAddr).Port
+		fmt.Printf("  LAN: http://%s:%d  (FinchKit → Find on LAN / ping)\n", ip, port)
+	}
+	fmt.Println("  GET /v1/health  (also /v1/ping)")
 	fmt.Println("  GET /v1/entities")
 	fmt.Println("  GET /v1/entities/{id}")
 	fmt.Println("  GET /v1/entities/{id}/tokenizer.json")
 	return http.Serve(ln, mux)
+}
+
+func localIPv4s() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			var ip net.IP
+			switch v := a.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() || ip.To4() == nil {
+				continue
+			}
+			out = append(out, ip.String())
+		}
+	}
+	return out
 }
 
 type entityRow struct {
