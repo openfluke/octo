@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,21 +97,32 @@ func ListEntities() []EntityInfo {
 }
 
 func readEntityMeta(path string) map[string]any {
-	raw, err := os.ReadFile(path)
-	if err != nil || len(raw) < 12 {
+	f, err := os.Open(path)
+	if err != nil {
 		return nil
 	}
-	magic := string(raw[:8])
+	defer f.Close()
+
+	var head [20]byte
+	n, err := f.Read(head[:])
+	if err != nil || n < 12 {
+		return nil
+	}
+	magic := string(head[:8])
 	if magic == entity.Magic {
-		if len(raw) < 20 {
+		if n < 20 {
 			return map[string]any{"magic": "ENTITY", "status": "?"}
 		}
-		headerLen := int(binary.LittleEndian.Uint64(raw[12:20]))
-		if headerLen <= 0 || 20+headerLen > len(raw) {
+		headerLen := int(binary.LittleEndian.Uint64(head[12:20]))
+		if headerLen <= 0 || headerLen > 16<<20 {
+			return map[string]any{"magic": "ENTITY", "status": "?"}
+		}
+		buf := make([]byte, headerLen)
+		if _, err := io.ReadFull(f, buf); err != nil {
 			return map[string]any{"magic": "ENTITY", "status": "?"}
 		}
 		var doc map[string]any
-		if err := json.Unmarshal(raw[20:20+headerLen], &doc); err != nil {
+		if err := json.Unmarshal(buf, &doc); err != nil {
 			return map[string]any{"magic": "ENTITY", "status": "?"}
 		}
 		doc["magic"] = "ENTITY"
@@ -122,16 +134,30 @@ func readEntityMeta(path string) map[string]any {
 	if magic != "OCTOENT1" {
 		return map[string]any{"magic": magic}
 	}
-	// header: magic(8) + u32 jsonLen LE + json
-	if len(raw) < 12 {
+	jsonLen := int(head[8]) | int(head[9])<<8 | int(head[10])<<16 | int(head[11])<<24
+	if jsonLen <= 0 || jsonLen > 16<<20 {
 		return nil
 	}
-	n := int(raw[8]) | int(raw[9])<<8 | int(raw[10])<<16 | int(raw[11])<<24
-	if n <= 0 || 12+n > len(raw) {
-		return nil
+	// Already consumed 12 header bytes from the 20-byte peek; keep leftover if any.
+	need := jsonLen
+	var buf []byte
+	if n > 12 {
+		extra := n - 12
+		if extra > need {
+			extra = need
+		}
+		buf = append(buf, head[12:12+extra]...)
+		need -= extra
+	}
+	if need > 0 {
+		rest := make([]byte, need)
+		if _, err := io.ReadFull(f, rest); err != nil {
+			return nil
+		}
+		buf = append(buf, rest...)
 	}
 	var m map[string]any
-	if err := json.Unmarshal(raw[12:12+n], &m); err != nil {
+	if err := json.Unmarshal(buf, &m); err != nil {
 		return nil
 	}
 	return m

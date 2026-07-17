@@ -15,6 +15,7 @@ import (
 	"github.com/openfluke/octo/internal/imagegen"
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/run"
+	"github.com/openfluke/octo/internal/serve"
 	"github.com/openfluke/octo/internal/speech"
 	"github.com/openfluke/octo/internal/tested"
 	"github.com/openfluke/octo/internal/ui"
@@ -62,6 +63,22 @@ func main() {
 			}
 			if err := speech.RunCLI(text, ref, frames, doSample, seed, fuseSIMD, fuseGPU); err != nil {
 				fmt.Fprintf(os.Stderr, "speak: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "serve":
+			addr := ":7878"
+			for i := 2; i < len(os.Args); i++ {
+				a := os.Args[i]
+				if (a == "--addr" || a == "-a") && i+1 < len(os.Args) {
+					i++
+					addr = os.Args[i]
+				} else if strings.HasPrefix(a, ":") || strings.Contains(a, ".") {
+					addr = a
+				}
+			}
+			if err := serve.Run(serve.Options{Addr: addr}); err != nil {
+				fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -161,6 +178,7 @@ func printHelp() {
 	fmt.Println("      -h/-w/-s N  --seed N")
 	fmt.Println("  ./octo speak \"text\" [opts]      generate WAV → octo_outputs/")
 	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
+	fmt.Println("  ./octo serve [--addr :7878]    host octo_entities for FinchKit phones")
 	fmt.Println("  ./octo bench <tpl.json|name>   run JSON benchmark → logs/")
 	fmt.Println("  ./octo help                    this message")
 	fmt.Println()
@@ -200,6 +218,7 @@ func interactive() {
 		fmt.Println("  [7] Tested models (download + convert)")
 		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
 		fmt.Println("  [9] Generate speech (MOSS-TTS-Nano)")
+		fmt.Println("  [0] Serve .entity CDN (FinchKit phones)")
 		fmt.Println("  [q] Quit")
 		choice := ui.Ask(in, "Choice: ", "")
 		switch strings.ToLower(strings.TrimSpace(choice)) {
@@ -221,6 +240,11 @@ func interactive() {
 			imagegen.Menu(in)
 		case "9":
 			speech.Menu(in)
+		case "0", "s", "serve":
+			addr := ui.Ask(in, "Listen addr [:7878]: ", ":7878")
+			if err := serve.Run(serve.Options{Addr: addr}); err != nil {
+				fmt.Printf("❌ %v\n", err)
+			}
 		case "q", "quit", "exit":
 			fmt.Println("bye")
 			return
