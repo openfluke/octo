@@ -19,9 +19,12 @@ import (
 	"github.com/openfluke/welvet/entity"
 )
 
-// Options for the entity CDN.
+// Options for the entity CDN and optional model host.
 type Options struct {
-	Addr string // default :7878
+	Addr      string // default :7878
+	Model     string // optional .entity path, file name, or repo ID
+	QueueSize int    // default 32; only used when Model is set
+	Profile   string // cpu_mc, simd_fuse, gpu_fuse; default cpu_mc
 }
 
 // Status is the live CDN listener state (FinchKit + CLI).
@@ -32,15 +35,20 @@ type Status struct {
 	URLs        []string `json:"urls,omitempty"`
 	EntitiesDir string   `json:"entities_dir,omitempty"`
 	EntityCount int      `json:"entity_count"`
+	Model       string   `json:"model,omitempty"`
+	Profile     string   `json:"profile,omitempty"`
+	QueueDepth  int      `json:"queue_depth,omitempty"`
+	QueueSize   int      `json:"queue_size,omitempty"`
 	Error       string   `json:"error,omitempty"`
 }
 
 var (
-	serveMu   sync.Mutex
-	httpSrv   *http.Server
-	listener  net.Listener
-	serveAddr string
-	serveErr  string
+	serveMu    sync.Mutex
+	httpSrv    *http.Server
+	listener   net.Listener
+	serveAddr  string
+	serveErr   string
+	activeHost *modelHost
 )
 
 // Start begins serving local .entity files (non-blocking). Idempotent if already up.
@@ -54,9 +62,19 @@ func Start(opts Options) error {
 	if addr == "" {
 		addr = ":7878"
 	}
-	mux := newMux(addr)
+	var host *modelHost
+	var err error
+	if strings.TrimSpace(opts.Model) != "" {
+		host, err = newModelHost(opts.Model, opts.QueueSize, opts.Profile)
+		if err != nil {
+			serveErr = err.Error()
+			return err
+		}
+	}
+	mux := newMux(addr, host)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
+		host.close()
 		serveErr = err.Error()
 		return err
 	}
@@ -65,6 +83,7 @@ func Start(opts Options) error {
 	httpSrv = srv
 	serveAddr = ln.Addr().String()
 	serveErr = ""
+	activeHost = host
 	go func() {
 		err := srv.Serve(ln)
 		serveMu.Lock()
@@ -76,7 +95,9 @@ func Start(opts Options) error {
 			listener = nil
 			httpSrv = nil
 			serveAddr = ""
+			activeHost = nil
 		}
+		host.close()
 	}()
 	return nil
 }
@@ -86,14 +107,17 @@ func Stop() error {
 	serveMu.Lock()
 	srv := httpSrv
 	ln := listener
+	host := activeHost
 	httpSrv = nil
 	listener = nil
 	serveAddr = ""
+	activeHost = nil
 	serveMu.Unlock()
 	if srv == nil {
 		if ln != nil {
 			_ = ln.Close()
 		}
+		host.close()
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -102,6 +126,7 @@ func Stop() error {
 	if err != nil {
 		_ = srv.Close()
 	}
+	host.close()
 	return err
 }
 
@@ -111,6 +136,7 @@ func GetStatus() Status {
 	listening := listener != nil
 	addr := serveAddr
 	errMsg := serveErr
+	host := activeHost
 	serveMu.Unlock()
 
 	st := Status{
@@ -118,6 +144,12 @@ func GetStatus() Status {
 		Addr:        addr,
 		EntitiesDir: paths.EntitiesDir(),
 		Error:       errMsg,
+	}
+	if host != nil {
+		st.Model = host.entityPath
+		st.Profile = host.profile
+		st.QueueDepth = len(host.jobs)
+		st.QueueSize = cap(host.jobs)
 	}
 	if matches, err := filepath.Glob(filepath.Join(paths.EntitiesDir(), "*.entity")); err == nil {
 		st.EntityCount = len(matches)
@@ -164,11 +196,17 @@ func Run(opts Options) error {
 	fmt.Println("  GET /v1/entities")
 	fmt.Println("  GET /v1/entities/{id}")
 	fmt.Println("  GET /v1/entities/{id}/tokenizer.json")
+	if st.Model != "" {
+		fmt.Printf("  model: %s (profile=%s, queue=%d)\n", st.Model, st.Profile, st.QueueSize)
+		fmt.Println("  POST /v1/generate  {\"prompt\":\"...\",\"max_tokens\":256}")
+		fmt.Println("  POST /v1/logits    {\"prompt\":\"...\"}  (float32 + exact bits)")
+		fmt.Println("  GET  /v1/queue")
+	}
 	// Block until process exit (Serve already running in goroutine).
 	select {}
 }
 
-func newMux(addr string) *http.ServeMux {
+func newMux(addr string, host *modelHost) *http.ServeMux {
 	mux := http.NewServeMux()
 	health := func(w http.ResponseWriter, r *http.Request) {
 		host, _ := os.Hostname()
@@ -235,6 +273,7 @@ func newMux(addr string) *http.ServeMux {
 		}
 		_, _ = io.Copy(w, f)
 	})
+	registerModelRoutes(mux, host)
 	return mux
 }
 

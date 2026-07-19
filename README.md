@@ -37,6 +37,29 @@ Paste a Hugging Face repo (e.g. `HuggingFaceTB/SmolLM2-135M-Instruct`), download
 
 Nothing is hardcoded as “the” model — presets are prompts only.
 
+## HTTP model host
+
+Host one `.entity` model with the standard library HTTP server:
+
+```bash
+go run . # choose [h], select the model, then simd_fuse or gpu_fuse
+
+./octo host octo_entities/HuggingFaceTB--SmolLM2-135M-Instruct.entity \
+  --profile simd_fuse --addr :7878 --queue 32
+
+curl -s http://localhost:7878/v1/generate \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"Say hello.","max_tokens":32}'
+
+curl -s http://localhost:7878/v1/logits \
+  -H 'content-type: application/json' \
+  -d '{"prompt":"Hello"}'
+```
+
+Requests run FIFO through one model worker because the KV cache is mutable. A full
+queue returns HTTP 429. `GET /v1/queue` reports its current depth. Logits responses
+include normal float32 `logits` and exact IEEE-754 `logit_bits`.
+
 ## Paths
 
 | Env | Default | Meaning |

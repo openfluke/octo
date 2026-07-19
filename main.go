@@ -66,18 +66,42 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		case "serve":
+		case "serve", "host":
 			addr := ":7878"
+			model := ""
+			queueSize := 32
+			profile := "cpu_mc"
 			for i := 2; i < len(os.Args); i++ {
 				a := os.Args[i]
 				if (a == "--addr" || a == "-a") && i+1 < len(os.Args) {
 					i++
 					addr = os.Args[i]
-				} else if strings.HasPrefix(a, ":") || strings.Contains(a, ".") {
+				} else if (a == "--model" || a == "-m") && i+1 < len(os.Args) {
+					i++
+					model = os.Args[i]
+				} else if a == "--queue" && i+1 < len(os.Args) {
+					i++
+					queueSize, _ = strconv.Atoi(os.Args[i])
+				} else if a == "--profile" && i+1 < len(os.Args) {
+					i++
+					profile = os.Args[i]
+				} else if !strings.HasPrefix(a, "-") && strings.HasSuffix(strings.ToLower(a), ".entity") {
+					model = a
+				} else if strings.HasPrefix(a, ":") {
+					addr = a
+				} else if !strings.HasPrefix(a, "-") && os.Args[1] == "host" {
+					model = a
+				} else if strings.Contains(a, ".") {
 					addr = a
 				}
 			}
-			if err := serve.Run(serve.Options{Addr: addr}); err != nil {
+			if os.Args[1] == "host" && model == "" {
+				fmt.Fprintln(os.Stderr, "usage: octo host <model.entity|entity-id> [--addr :7878] [--queue 32]")
+				os.Exit(2)
+			}
+			if err := serve.Run(serve.Options{
+				Addr: addr, Model: model, QueueSize: queueSize, Profile: profile,
+			}); err != nil {
 				fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 				os.Exit(1)
 			}
@@ -179,6 +203,8 @@ func printHelp() {
 	fmt.Println("  ./octo speak \"text\" [opts]      generate WAV → octo_outputs/")
 	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
 	fmt.Println("  ./octo serve [--addr :7878]    host octo_entities for FinchKit phones")
+	fmt.Println("  ./octo host <model.entity>      HTTP inference with a bounded request queue")
+	fmt.Println("      --addr :7878  --queue 32  --profile simd_fuse|gpu_fuse|cpu_mc")
 	fmt.Println("  ./octo bench <tpl.json|name>   run JSON benchmark → logs/")
 	fmt.Println("  ./octo help                    this message")
 	fmt.Println()
@@ -219,6 +245,7 @@ func interactive() {
 		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
 		fmt.Println("  [9] Generate speech (MOSS-TTS-Nano)")
 		fmt.Println("  [0] Serve .entity CDN (FinchKit phones)")
+		fmt.Println("  [h] Host a mounted .entity model over HTTP")
 		fmt.Println("  [q] Quit")
 		choice := ui.Ask(in, "Choice: ", "")
 		switch strings.ToLower(strings.TrimSpace(choice)) {
@@ -245,6 +272,8 @@ func interactive() {
 			if err := serve.Run(serve.Options{Addr: addr}); err != nil {
 				fmt.Printf("❌ %v\n", err)
 			}
+		case "h", "host":
+			hostMenu(in)
 		case "q", "quit", "exit":
 			fmt.Println("bye")
 			return
@@ -252,6 +281,52 @@ func interactive() {
 			fmt.Println("Invalid choice")
 		}
 		fmt.Println()
+	}
+}
+
+func hostMenu(in *bufio.Reader) {
+	fmt.Println("\nHost .entity model over HTTP")
+	ents := catalog.ListEntities()
+	if len(ents) == 0 {
+		fmt.Println("No .entity files. Download and convert a model first.")
+		return
+	}
+	for i, e := range ents {
+		fmt.Printf("  [%d] %s  (%d bytes)\n", i+1, e.RepoID, e.Bytes)
+	}
+	choice := ui.Ask(in, "Model: ", "1")
+	idx, err := strconv.Atoi(strings.TrimSpace(choice))
+	if err != nil || idx < 1 || idx > len(ents) {
+		fmt.Println("Invalid model")
+		return
+	}
+
+	fmt.Println("\nExecution profile")
+	fmt.Println("  [1] simd_fuse  fused SIMD on CPU")
+	fmt.Println("  [2] gpu_fuse   fully fused GPU")
+	fmt.Println("  [3] cpu_mc     portable CPU fallback")
+	profileChoice := ui.Ask(in, "Profile: ", "1")
+	profile := map[string]string{
+		"1": "simd_fuse",
+		"2": "gpu_fuse",
+		"3": "cpu_mc",
+	}[strings.TrimSpace(profileChoice)]
+	if profile == "" {
+		fmt.Println("Invalid profile")
+		return
+	}
+
+	addr := ui.Ask(in, "Listen addr [:7878]: ", ":7878")
+	queueText := ui.Ask(in, "Queue size [32]: ", "32")
+	queueSize, err := strconv.Atoi(strings.TrimSpace(queueText))
+	if err != nil || queueSize <= 0 {
+		fmt.Println("Invalid queue size")
+		return
+	}
+	if err := serve.Run(serve.Options{
+		Addr: addr, Model: ents[idx-1].Path, QueueSize: queueSize, Profile: profile,
+	}); err != nil {
+		fmt.Printf("❌ %v\n", err)
 	}
 }
 
