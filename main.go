@@ -19,7 +19,7 @@ import (
 	"github.com/openfluke/octo/internal/speech"
 	"github.com/openfluke/octo/internal/tested"
 	"github.com/openfluke/octo/internal/ui"
-	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/model/transformer"
 )
 
 func main() {

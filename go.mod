@@ -10,6 +10,6 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace github.com/openfluke/welvet => ../
+replace github.com/openfluke/welvet => ../../
 
-replace github.com/eliben/go-sentencepiece => ../third_party/go-sentencepiece
+replace github.com/eliben/go-sentencepiece => ../../third_party/go-sentencepiece

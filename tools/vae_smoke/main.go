@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/openfluke/welvet/flux2"
+	"github.com/openfluke/welvet/apps/flux2"
 )
 
 func main() {

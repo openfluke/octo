@@ -9,11 +9,11 @@ import (
 
 	"github.com/openfluke/octo/internal/catalog"
 	"github.com/openfluke/octo/internal/ui"
-	"github.com/openfluke/welvet/entity"
+	"github.com/openfluke/welvet/model/entity"
 	"github.com/openfluke/welvet/quant"
 	"github.com/openfluke/welvet/simd"
-	"github.com/openfluke/welvet/tokenizer"
-	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/model/tokenizer"
+	"github.com/openfluke/welvet/model/transformer"
 	"github.com/openfluke/welvet/webgpu"
 )
 

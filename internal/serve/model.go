@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/openfluke/welvet/tokenizer"
-	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/model/tokenizer"
+	"github.com/openfluke/welvet/model/transformer"
 )
 
 const defaultQueueSize = 32

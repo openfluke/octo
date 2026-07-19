@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/openfluke/octo/internal/paths"
-	"github.com/openfluke/welvet/entity"
+	"github.com/openfluke/welvet/model/entity"
 )
 
 // Snapshot describes a local HF-style snapshot.

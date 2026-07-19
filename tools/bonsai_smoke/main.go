@@ -5,8 +5,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/openfluke/welvet/tokenizer"
-	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/model/tokenizer"
+	"github.com/openfluke/welvet/model/transformer"
 	"github.com/openfluke/welvet/webgpu"
 )
 

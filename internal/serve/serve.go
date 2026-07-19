@@ -16,7 +16,7 @@ import (
 
 	"github.com/openfluke/octo/internal/catalog"
 	"github.com/openfluke/octo/internal/paths"
-	"github.com/openfluke/welvet/entity"
+	"github.com/openfluke/welvet/model/entity"
 )
 
 // Options for the entity CDN and optional model host.

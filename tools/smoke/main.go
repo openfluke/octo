@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/openfluke/welvet/core"
-	"github.com/openfluke/welvet/entity"
+	"github.com/openfluke/welvet/model/entity"
 	"github.com/openfluke/welvet/quant"
-	"github.com/openfluke/welvet/tokenizer"
-	"github.com/openfluke/welvet/transformer"
+	"github.com/openfluke/welvet/model/tokenizer"
+	"github.com/openfluke/welvet/model/transformer"
 )
 
 func main() {

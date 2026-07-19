@@ -11,7 +11,7 @@ import (
 
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/ui"
-	"github.com/openfluke/welvet/flux2"
+	"github.com/openfluke/welvet/apps/flux2"
 	"github.com/openfluke/welvet/webgpu"
 )
 
