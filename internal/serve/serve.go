@@ -24,7 +24,8 @@ type Options struct {
 	Addr      string // default :7878
 	Model     string // optional .entity path, file name, or repo ID
 	QueueSize int    // default 32; only used when Model is set
-	Profile   string // cpu_mc, simd_fuse, gpu_fuse; default cpu_mc
+	Profile   string // any transformer.NamedProfiles entry; default cpu_mc
+	TileSize  int    // dense MatVec tile size; default 32
 }
 
 // Status is the live CDN listener state (FinchKit + CLI).
@@ -37,6 +38,7 @@ type Status struct {
 	EntityCount int      `json:"entity_count"`
 	Model       string   `json:"model,omitempty"`
 	Profile     string   `json:"profile,omitempty"`
+	TileSize    int      `json:"tile_size,omitempty"`
 	QueueDepth  int      `json:"queue_depth,omitempty"`
 	QueueSize   int      `json:"queue_size,omitempty"`
 	Error       string   `json:"error,omitempty"`
@@ -65,7 +67,7 @@ func Start(opts Options) error {
 	var host *modelHost
 	var err error
 	if strings.TrimSpace(opts.Model) != "" {
-		host, err = newModelHost(opts.Model, opts.QueueSize, opts.Profile)
+		host, err = newModelHost(opts.Model, opts.QueueSize, opts.Profile, opts.TileSize)
 		if err != nil {
 			serveErr = err.Error()
 			return err
@@ -148,6 +150,7 @@ func GetStatus() Status {
 	if host != nil {
 		st.Model = host.entityPath
 		st.Profile = host.profile
+		st.TileSize = host.tileSize
 		st.QueueDepth = len(host.jobs)
 		st.QueueSize = cap(host.jobs)
 	}
@@ -197,7 +200,8 @@ func Run(opts Options) error {
 	fmt.Println("  GET /v1/entities/{id}")
 	fmt.Println("  GET /v1/entities/{id}/tokenizer.json")
 	if st.Model != "" {
-		fmt.Printf("  model: %s (profile=%s, queue=%d)\n", st.Model, st.Profile, st.QueueSize)
+		fmt.Printf("  model: %s (profile=%s, tile=%d, queue=%d)\n",
+			st.Model, st.Profile, st.TileSize, st.QueueSize)
 		fmt.Println("  POST /v1/generate  {\"prompt\":\"...\",\"max_tokens\":256}")
 		fmt.Println("  POST /v1/logits    {\"prompt\":\"...\"}  (float32 + exact bits)")
 		fmt.Println("  GET  /v1/queue")

@@ -19,6 +19,7 @@ import (
 	"github.com/openfluke/octo/internal/speech"
 	"github.com/openfluke/octo/internal/tested"
 	"github.com/openfluke/octo/internal/ui"
+	"github.com/openfluke/welvet/transformer"
 )
 
 func main() {
@@ -71,6 +72,7 @@ func main() {
 			model := ""
 			queueSize := 32
 			profile := "cpu_mc"
+			tileSize := 32
 			for i := 2; i < len(os.Args); i++ {
 				a := os.Args[i]
 				if (a == "--addr" || a == "-a") && i+1 < len(os.Args) {
@@ -85,6 +87,9 @@ func main() {
 				} else if a == "--profile" && i+1 < len(os.Args) {
 					i++
 					profile = os.Args[i]
+				} else if a == "--tile" && i+1 < len(os.Args) {
+					i++
+					tileSize, _ = strconv.Atoi(os.Args[i])
 				} else if !strings.HasPrefix(a, "-") && strings.HasSuffix(strings.ToLower(a), ".entity") {
 					model = a
 				} else if strings.HasPrefix(a, ":") {
@@ -100,7 +105,8 @@ func main() {
 				os.Exit(2)
 			}
 			if err := serve.Run(serve.Options{
-				Addr: addr, Model: model, QueueSize: queueSize, Profile: profile,
+				Addr: addr, Model: model, QueueSize: queueSize,
+				Profile: profile, TileSize: tileSize,
 			}); err != nil {
 				fmt.Fprintf(os.Stderr, "serve: %v\n", err)
 				os.Exit(1)
@@ -204,7 +210,7 @@ func printHelp() {
 	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
 	fmt.Println("  ./octo serve [--addr :7878]    host octo_entities for FinchKit phones")
 	fmt.Println("  ./octo host <model.entity>      HTTP inference with a bounded request queue")
-	fmt.Println("      --addr :7878  --queue 32  --profile simd_fuse|gpu_fuse|cpu_mc")
+	fmt.Println("      --addr :7878  --queue 32  --profile NAME  --tile 32")
 	fmt.Println("  ./octo bench <tpl.json|name>   run JSON benchmark → logs/")
 	fmt.Println("  ./octo help                    this message")
 	fmt.Println()
@@ -302,17 +308,43 @@ func hostMenu(in *bufio.Reader) {
 	}
 
 	fmt.Println("\nExecution profile")
-	fmt.Println("  [1] simd_fuse  fused SIMD on CPU")
-	fmt.Println("  [2] gpu_fuse   fully fused GPU")
-	fmt.Println("  [3] cpu_mc     portable CPU fallback")
-	profileChoice := ui.Ask(in, "Profile: ", "1")
-	profile := map[string]string{
-		"1": "simd_fuse",
-		"2": "gpu_fuse",
-		"3": "cpu_mc",
-	}[strings.TrimSpace(profileChoice)]
-	if profile == "" {
+	profiles := transformer.NamedProfiles()
+	for i, candidate := range profiles {
+		cores := "single-core"
+		if candidate.MultiCore {
+			cores = "multicore"
+		}
+		note := ""
+		switch candidate.Name {
+		case "gpu":
+			note = "  host attention + WebGPU matrix operations"
+		case "simd_fuse":
+			note = "  fused quantized CPU"
+		case "gpu_fuse":
+			note = "  full fused model on GPU"
+		}
+		fmt.Printf("  [%d] %-10s %s, %s%s\n",
+			i+1, candidate.Name, candidate.Backend.String(), cores, note)
+	}
+	defaultProfile := "4" // simd_mc for general models
+	if tr, ok := ents[idx-1].Meta["transformer"].(map[string]any); ok {
+		arch, _ := tr["architecture"].(string)
+		if arch == "qwen35_hybrid" || arch == "qwen3_dense" {
+			defaultProfile = "7" // gpu_fuse for Bonsai/Qwen3 BinaryG128
+		}
+	}
+	profileChoice := ui.Ask(in, "Profile: ", defaultProfile)
+	profileIdx, err := strconv.Atoi(strings.TrimSpace(profileChoice))
+	if err != nil || profileIdx < 1 || profileIdx > len(profiles) {
 		fmt.Println("Invalid profile")
+		return
+	}
+	profile := profiles[profileIdx-1].Name
+
+	tileText := ui.Ask(in, "Dense MatVec tile size [32]: ", "32")
+	tileSize, err := strconv.Atoi(strings.TrimSpace(tileText))
+	if err != nil || tileSize <= 0 {
+		fmt.Println("Invalid tile size")
 		return
 	}
 
@@ -324,7 +356,8 @@ func hostMenu(in *bufio.Reader) {
 		return
 	}
 	if err := serve.Run(serve.Options{
-		Addr: addr, Model: ents[idx-1].Path, QueueSize: queueSize, Profile: profile,
+		Addr: addr, Model: ents[idx-1].Path, QueueSize: queueSize,
+		Profile: profile, TileSize: tileSize,
 	}); err != nil {
 		fmt.Printf("❌ %v\n", err)
 	}

@@ -22,6 +22,7 @@ const defaultQueueSize = 32
 type modelHost struct {
 	entityPath string
 	profile    string
+	tileSize   int
 	model      *transformer.Model
 	tokenizer  *tokenizer.Tokenizer
 	jobs       chan modelJob
@@ -76,7 +77,7 @@ type logitsResponse struct {
 	LogitBits []uint32 `json:"logit_bits"`
 }
 
-func newModelHost(entityID string, queueSize int, profileName string) (*modelHost, error) {
+func newModelHost(entityID string, queueSize int, profileName string, tileSize int) (*modelHost, error) {
 	path := strings.TrimSpace(entityID)
 	if st, err := os.Stat(path); err != nil || st.IsDir() {
 		path, err = resolveEntityFile(entityID)
@@ -107,6 +108,9 @@ func newModelHost(entityID string, queueSize int, profileName string) (*modelHos
 	if !found {
 		return nil, fmt.Errorf("unknown execution profile %q", profileName)
 	}
+	if tileSize > 0 {
+		profile.TileSize = tileSize
+	}
 	if model.FusedPack && profile.Fused {
 		profile.PackFormat = model.PackFormat
 	}
@@ -123,6 +127,7 @@ func newModelHost(entityID string, queueSize int, profileName string) (*modelHos
 	h := &modelHost{
 		entityPath: path,
 		profile:    profileName,
+		tileSize:   profile.TileSize,
 		model:      model,
 		tokenizer:  tok,
 		jobs:       make(chan modelJob, queueSize),
@@ -276,6 +281,7 @@ func (h *modelHost) queueStatus() map[string]any {
 	return map[string]any{
 		"entity":         h.entityPath,
 		"profile":        h.profile,
+		"tile_size":      h.tileSize,
 		"queue_depth":    len(h.jobs),
 		"queue_capacity": cap(h.jobs),
 		"active":         h.active.Load() != 0,
