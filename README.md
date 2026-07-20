@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="octo.png" alt="Octo" width="220"/>
+</p>
+
 # Octo
 
 **Octo** is Welvet’s interactive model shell — Lucy Bloom Rivers, rebuilt for Welvet.
@@ -81,3 +85,16 @@ include normal float32 `logits` and exact IEEE-754 `logit_bits`.
 - 🚧 Top-K / temperature sampling
 
 SmolLM2-135M: ~270 MB safetensors → ~189 MB Q4_0 `.entity` (Lucy-sized) or ~513 MB FP32.
+
+## Release
+
+Tags GitHub Release with the Welvet scorecard version from `../../README.md`. Attaches `logs/suite.*` if present, else the newest run log under `logs/`.
+
+```bash
+cd welvet/apps/octo
+./release.sh              # commit + push + release
+./release.sh --dry-run
+./release.sh --code-only  # tag source only, skip logs
+```
+
+Needs `gh auth login` or `GITHUB_TOKEN`. `logs/` and `dist/` stay gitignored.

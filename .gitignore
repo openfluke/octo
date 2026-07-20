@@ -2,6 +2,7 @@ octo_hub/
 octo_entities/
 octo_outputs/
 logs/
+dist/
 *.part
 *.entity
 .DS_Store
