@@ -17,6 +17,7 @@ import (
 	"github.com/openfluke/octo/internal/run"
 	"github.com/openfluke/octo/internal/serve"
 	"github.com/openfluke/octo/internal/speech"
+	"github.com/openfluke/octo/internal/stt"
 	"github.com/openfluke/octo/internal/tested"
 	"github.com/openfluke/octo/internal/ui"
 	"github.com/openfluke/welvet/model/transformer"
@@ -64,6 +65,14 @@ func main() {
 			}
 			if err := speech.RunCLI(text, ref, frames, doSample, seed, fuseSIMD, fuseGPU); err != nil {
 				fmt.Fprintf(os.Stderr, "speak: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		case "transcribe", "stt":
+			if err := stt.RunCLI(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "transcribe: %v\n", err)
+				fmt.Fprintln(os.Stderr, `usage: octo transcribe <audio.wav> [--model DIR]`)
+				fmt.Fprintln(os.Stderr, `       octo transcribe --live [--secs 5] [--loop] [--model DIR]`)
 				os.Exit(1)
 			}
 			return
@@ -208,6 +217,9 @@ func printHelp() {
 	fmt.Println("      -h/-w/-s N  --seed N")
 	fmt.Println("  ./octo speak \"text\" [opts]      generate WAV → octo_outputs/")
 	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
+	fmt.Println("  ./octo transcribe <wav>         ASR (wav2vec2-base-960h CTC)")
+	fmt.Println("  ./octo transcribe --live [opts] record mic clip → transcript")
+	fmt.Println("      --secs N  --loop  --model DIR")
 	fmt.Println("  ./octo serve [--addr :7878]    host octo_entities for FinchKit phones")
 	fmt.Println("  ./octo host <model.entity>      HTTP inference with a bounded request queue")
 	fmt.Println("      --addr :7878  --queue 32  --profile NAME  --tile 32")
@@ -250,6 +262,7 @@ func interactive() {
 		fmt.Println("  [7] Tested models (download + convert)")
 		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
 		fmt.Println("  [9] Generate speech (MOSS-TTS-Nano)")
+		fmt.Println("  [t] Transcribe speech (wav2vec2 — file or mic clip)")
 		fmt.Println("  [0] Serve .entity CDN (FinchKit phones)")
 		fmt.Println("  [h] Host a mounted .entity model over HTTP")
 		fmt.Println("  [q] Quit")
@@ -273,6 +286,8 @@ func interactive() {
 			imagegen.Menu(in)
 		case "9":
 			speech.Menu(in)
+		case "t", "transcribe", "stt":
+			stt.Menu(in)
 		case "0", "s", "serve":
 			addr := ui.Ask(in, "Listen addr [:7878]: ", ":7878")
 			if err := serve.Run(serve.Options{Addr: addr}); err != nil {

@@ -9,6 +9,8 @@ type Model struct {
 	FormatHint string
 	// ImageGen skips .entity convert; use menu [8] Flux2 image generation instead.
 	ImageGen bool
+	// ASR is wav2vec2 CTC — packs FormatNone ENTITY; use menu [t] Transcribe.
+	ASR bool
 }
 
 // Models are entities that have been exercised on the Welvet/Octo path.
@@ -18,6 +20,13 @@ var Models = []Model{
 		Title:      "SmolLM2-135M",
 		Note:       "Q4_0 Lucy fuse — tiny, any GPU/CPU",
 		FormatHint: "q4_0",
+	},
+	{
+		Repo:       "facebook/wav2vec2-base-960h",
+		Title:      "wav2vec2-base-960h",
+		Note:       "English CTC ASR — menu [t]; FormatNone ENTITY (~360MB)",
+		FormatHint: "none",
+		ASR:        true,
 	},
 	{
 		Repo:       "prism-ml/Bonsai-1.7B-mlx-1bit",

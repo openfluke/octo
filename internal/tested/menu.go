@@ -72,7 +72,7 @@ func Menu(in *bufio.Reader) {
 		ok++
 	}
 	fmt.Printf("\nDone: %d ok, %d failed.\n", ok, fail)
-	fmt.Println("  Chat models → menu [1] Run.  Image models → menu [8] Generate image.")
+	fmt.Println("  Chat models → menu [1] Run.  Image → [8].  ASR → [t] Transcribe.")
 }
 
 func prepareOne(m Model) error {

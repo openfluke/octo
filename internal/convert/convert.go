@@ -81,9 +81,13 @@ func Menu(in *bufio.Reader) {
 
 	// Detect MLX 1-bit early — pack format is forced to BinaryPacked g128.
 	forceBinary := false
+	forceNone := false
 	if cfgPath := filepath.Join(snap.Dir, "config.json"); fileExistsLocal(cfgPath) {
 		if cfg, err := loadJSONMap(cfgPath); err == nil {
-			if hf.IsQwen35Hybrid(cfg) {
+			if hf.IsWav2Vec2CTC(cfg) {
+				forceNone = true
+				fmt.Println("\nDetected wav2vec2 CTC ASR — packing FormatNone FP32 ENTITY.")
+			} else if hf.IsQwen35Hybrid(cfg) {
 				forceBinary = true
 				fmt.Println("\nDetected Qwen3.5 / Bonsai hybrid (MLX 1-bit) — packing BinaryPacked g128 (text-only).")
 			} else if bits, group, ok := hf.QuantBitsGroup(cfg); ok && bits == 1 && group == 128 {
@@ -95,7 +99,9 @@ func Menu(in *bufio.Reader) {
 
 	formats := quant.AllFormats
 	var format quant.Format
-	if forceBinary {
+	if forceNone {
+		format = quant.FormatNone
+	} else if forceBinary {
 		format = quant.FormatBinaryPacked
 	} else {
 		fmt.Println("\nTarget pack format")
@@ -202,14 +208,17 @@ func convertSafetensors(snap catalog.Snapshot, format quant.Format) error {
 	if st != nil {
 		fmt.Printf("   size: %.1f MB  status=packed\n", float64(st.Size())/(1024*1024))
 	}
-	fmt.Println("   Next: menu [1] Run to chat.")
+	fmt.Println("   Next: menu [1] Run to chat (or [t] Transcribe for wav2vec2 ASR).")
 	return nil
 }
 
-// DetectPackFormat chooses BinaryPacked for MLX 1-bit, else Q4_0.
+// DetectPackFormat chooses BinaryPacked for MLX 1-bit, FormatNone for wav2vec2 ASR, else Q4_0.
 func DetectPackFormat(snapDir string) quant.Format {
 	cfgPath := filepath.Join(snapDir, "config.json")
 	if cfg, err := loadJSONMap(cfgPath); err == nil {
+		if hf.IsWav2Vec2CTC(cfg) {
+			return quant.FormatNone
+		}
 		if hf.IsQwen35Hybrid(cfg) {
 			return quant.FormatBinaryPacked
 		}
