@@ -15,6 +15,18 @@ import (
 	"github.com/openfluke/octo/internal/ui"
 )
 
+// newHFClient uses normal HTTP/2 (HF CDN expects it) with generous timeouts.
+// Stream CANCEL / flaky mid-file errors are handled by download retries.
+func newHFClient() *http.Client {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.MaxIdleConns = 16
+	tr.MaxIdleConnsPerHost = 8
+	tr.IdleConnTimeout = 90 * time.Second
+	tr.ResponseHeaderTimeout = 180 * time.Second
+	tr.ExpectContinueTimeout = 5 * time.Second
+	return &http.Client{Timeout: 0, Transport: tr}
+}
+
 // treeEntry is one Hugging Face /api/models/{repo}/tree/main node.
 type treeEntry struct {
 	Type string `json:"type"`
@@ -41,8 +53,8 @@ func DownloadMenu(in *bufio.Reader) {
 		fmt.Println("  (Set HUGGING_FACE_HUB_TOKEN if the repo is gated / returns 401.)")
 	}
 	fmt.Printf("  hub root: %s\n", hubRoot)
-	client := &http.Client{Timeout: 0}
-	files, err := listRepoFiles(client, repo)
+	client := newHFClient()
+	files, err := listRepoFilesRetry(client, repo)
 	if err != nil {
 		fmt.Printf("❌ list files: %v\n", err)
 		return
@@ -80,8 +92,8 @@ func DownloadRepo(repo string) (snapDir string, err error) {
 	if err := os.MkdirAll(hubRoot, 0o755); err != nil {
 		return "", err
 	}
-	client := &http.Client{Timeout: 0}
-	files, err := listRepoFiles(client, repo)
+	client := newHFClient()
+	files, err := listRepoFilesRetry(client, repo)
 	if err != nil {
 		return "", err
 	}
@@ -134,6 +146,23 @@ func normalizeRepo(s string) string {
 
 func resolveURL(repo, file string) string {
 	return fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", repo, file)
+}
+
+func listRepoFilesRetry(client *http.Client, repo string) ([]treeEntry, error) {
+	var last error
+	for attempt := 1; attempt <= 5; attempt++ {
+		entries, err := listRepoFiles(client, repo)
+		if err == nil {
+			return entries, nil
+		}
+		last = err
+		if !isRetryableDownload(err) {
+			return nil, err
+		}
+		fmt.Printf("  list retry %d/5 after %v\n", attempt, err)
+		time.Sleep(time.Duration(attempt*attempt) * 400 * time.Millisecond)
+	}
+	return nil, last
 }
 
 func listRepoFiles(client *http.Client, repo string) ([]treeEntry, error) {
@@ -200,6 +229,40 @@ func selectDownloadable(entries []treeEntry) []treeEntry {
 }
 
 func downloadFile(client *http.Client, url, dest string) error {
+	var last error
+	for attempt := 1; attempt <= 5; attempt++ {
+		last = downloadFileOnce(client, url, dest)
+		if last == nil {
+			return nil
+		}
+		if !isRetryableDownload(last) {
+			return last
+		}
+		fmt.Printf("        retry %d/5 after %v\n", attempt, last)
+		time.Sleep(time.Duration(attempt*attempt) * 400 * time.Millisecond)
+	}
+	return last
+}
+
+func isRetryableDownload(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"cancel", "stream error", "http2", "connection reset", "broken pipe",
+		"unexpected eof", "timeout", "temporary", "i/o timeout", "tls handshake",
+		"server closed idle connection", "malformed http", "connection broken",
+		"http 502", "http 503", "http 504", "http 429",
+	} {
+		if strings.Contains(s, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func downloadFileOnce(client *http.Client, url, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
@@ -211,6 +274,7 @@ func downloadFile(client *http.Client, url, dest string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", "Octo/0.1 (Welvet)")
+	req.Header.Set("Accept-Encoding", "identity")
 	if tok := strings.TrimSpace(os.Getenv("HUGGING_FACE_HUB_TOKEN")); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}

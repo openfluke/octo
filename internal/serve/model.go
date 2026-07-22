@@ -45,6 +45,8 @@ type modelRequest struct {
 	Turns          []transformer.Turn `json:"turns,omitempty"`
 	MaxTokens      int                `json:"max_tokens,omitempty"`
 	EnableThinking bool               `json:"enable_thinking,omitempty"`
+	// Profile optionally switches execution before this job (e.g. simd_fuse, gpu_fuse).
+	Profile string `json:"profile,omitempty"`
 }
 
 type modelResponse struct {
@@ -169,8 +171,42 @@ func (h *modelHost) run() {
 	}
 }
 
+func (h *modelHost) ensureProfile(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || name == h.profile {
+		return nil
+	}
+	var profile transformer.ExecProfile
+	found := false
+	for _, candidate := range transformer.NamedProfiles() {
+		if candidate.Name == name {
+			profile = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("unknown execution profile %q", name)
+	}
+	if h.tileSize > 0 {
+		profile.TileSize = h.tileSize
+	}
+	if h.model.FusedPack && profile.Fused {
+		profile.PackFormat = h.model.PackFormat
+	}
+	if err := h.model.ApplyExec(profile); err != nil {
+		return fmt.Errorf("apply %s profile: %w", name, err)
+	}
+	h.profile = name
+	h.tileSize = profile.TileSize
+	return nil
+}
+
 func (h *modelHost) execute(job modelJob) modelResponse {
 	req := job.request
+	if err := h.ensureProfile(req.Profile); err != nil {
+		return errorResponse(http.StatusBadRequest, err)
+	}
 	switch req.Mode {
 	case "", "generate":
 		if strings.TrimSpace(req.Prompt) == "" {

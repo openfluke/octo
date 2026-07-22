@@ -58,12 +58,14 @@ func main() {
 			}
 			return
 		case "speak":
-			text, ref, frames, seed, doSample, fuseSIMD, fuseGPU := parseSpeakArgs(os.Args[2:])
-			if text == "" {
-				fmt.Fprintln(os.Stderr, `usage: octo speak "text" [--ref wav] [--frames 300] [--seed 42] [--greedy] [--simd] [--gpu]`)
+			o := parseSpeakArgs(os.Args[2:])
+			if o.Text == "" {
+				fmt.Fprintln(os.Stderr, `usage: octo speak "text" [--engine moss|qwen] [--model 0.6b|1.7b|repo]`)
+				fmt.Fprintln(os.Stderr, `                 [--speaker Ryan] [--language English] [--download]`)
+				fmt.Fprintln(os.Stderr, `                 [--ref wav] [--frames 300] [--seed 42] [--greedy] [--simd] [--gpu]`)
 				os.Exit(2)
 			}
-			if err := speech.RunCLI(text, ref, frames, doSample, seed, fuseSIMD, fuseGPU); err != nil {
+			if err := speech.RunCLI(o); err != nil {
 				fmt.Fprintf(os.Stderr, "speak: %v\n", err)
 				os.Exit(1)
 			}
@@ -167,47 +169,84 @@ func parseImageArgs(args []string) (prompt string, h, w, steps int, seed int64) 
 	return prompt, h, w, steps, seed
 }
 
-func parseSpeakArgs(args []string) (text, ref string, frames int, seed int64, doSample, fuseSIMD, fuseGPU bool) {
-	frames, seed, doSample, fuseSIMD = 300, 42, true, true
+func parseSpeakArgs(args []string) speech.SpeakCLIOpts {
+	o := speech.SpeakCLIOpts{
+		Engine:   "moss",
+		Frames:   300,
+		Seed:     42,
+		DoSample: true,
+		FuseSIMD: true,
+		Speaker:  "Ryan",
+		Language: "English",
+	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
+		case a == "--engine":
+			i++
+			if i < len(args) {
+				o.Engine = args[i]
+			}
+		case a == "--model":
+			i++
+			if i < len(args) {
+				o.Model = args[i]
+			}
+		case a == "--speaker":
+			i++
+			if i < len(args) {
+				o.Speaker = args[i]
+			}
+		case a == "--language":
+			i++
+			if i < len(args) {
+				o.Language = args[i]
+			}
+		case a == "--instruct":
+			i++
+			if i < len(args) {
+				o.Instruct = args[i]
+			}
+		case a == "--download":
+			o.Download = true
 		case a == "--ref":
 			i++
 			if i < len(args) {
-				ref = args[i]
+				o.Ref = args[i]
 			}
 		case a == "--frames":
 			i++
 			if i < len(args) {
-				frames, _ = strconv.Atoi(args[i])
+				o.Frames, _ = strconv.Atoi(args[i])
 			}
 		case a == "--seed":
 			i++
 			if i < len(args) {
-				seed, _ = strconv.ParseInt(args[i], 10, 64)
+				o.Seed, _ = strconv.ParseInt(args[i], 10, 64)
 			}
 		case a == "--greedy":
-			doSample = false
+			o.DoSample = false
 		case a == "--simd":
-			fuseSIMD = true
+			o.FuseSIMD = true
 		case a == "--no-simd":
-			fuseSIMD = false
+			o.FuseSIMD = false
 		case a == "--gpu":
-			fuseGPU = true
+			o.FuseGPU = true
 		case a == "--no-gpu":
-			fuseGPU = false
+			o.FuseGPU = false
+		case a == "--qwen":
+			o.Engine = "qwen"
 		case strings.HasPrefix(a, "-"):
 			// ignore
 		default:
-			if text == "" {
-				text = a
+			if o.Text == "" {
+				o.Text = a
 			} else {
-				text += " " + a
+				o.Text += " " + a
 			}
 		}
 	}
-	return text, ref, frames, seed, doSample, fuseSIMD, fuseGPU
+	return o
 }
 
 func printHelp() {
@@ -216,6 +255,8 @@ func printHelp() {
 	fmt.Println("  ./octo image \"prompt\" [opts]    generate PNG → octo_outputs/ (GPU required)")
 	fmt.Println("      -h/-w/-s N  --seed N")
 	fmt.Println("  ./octo speak \"text\" [opts]      generate WAV → octo_outputs/")
+	fmt.Println("      --engine moss|qwen  --model 0.6b|1.7b|repo  --download")
+	fmt.Println("      --speaker Ryan  --language English")
 	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
 	fmt.Println("  ./octo transcribe <wav>         ASR (wav2vec2-base-960h CTC)")
 	fmt.Println("  ./octo transcribe --live [opts] record mic clip → transcript")
@@ -261,7 +302,7 @@ func interactive() {
 		fmt.Println("  [6] Run benchmark template (JSON → logs/)")
 		fmt.Println("  [7] Tested models (download + convert)")
 		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
-		fmt.Println("  [9] Generate speech (MOSS-TTS-Nano)")
+		fmt.Println("  [9] Generate speech (MOSS / Qwen3-TTS)")
 		fmt.Println("  [t] Transcribe speech (wav2vec2 — file or mic clip)")
 		fmt.Println("  [0] Serve .entity CDN (FinchKit phones)")
 		fmt.Println("  [h] Host a mounted .entity model over HTTP")
