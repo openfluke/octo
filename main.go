@@ -73,8 +73,9 @@ func main() {
 		case "transcribe", "stt":
 			if err := stt.RunCLI(os.Args[2:]); err != nil {
 				fmt.Fprintf(os.Stderr, "transcribe: %v\n", err)
-				fmt.Fprintln(os.Stderr, `usage: octo transcribe <audio.wav> [--model DIR]`)
-				fmt.Fprintln(os.Stderr, `       octo transcribe --live [--secs 5] [--loop] [--model DIR]`)
+				fmt.Fprintln(os.Stderr, `usage: octo transcribe <audio.wav> [--engine wav2vec2|qwen] [--model DIR|0.6b|1.7b]`)
+				fmt.Fprintln(os.Stderr, `       octo transcribe --live [--secs 5] [--loop] [--engine …] [--model …]`)
+				fmt.Fprintln(os.Stderr, `       octo transcribe --engine qwen --model 0.6b --download <wav>`)
 				os.Exit(1)
 			}
 			return
@@ -258,9 +259,10 @@ func printHelp() {
 	fmt.Println("      --engine moss|qwen  --model 0.6b|1.7b|repo  --download")
 	fmt.Println("      --speaker Ryan  --language English")
 	fmt.Println("      --ref wav  --frames N  --seed N  --greedy  --simd/--no-simd  --gpu")
-	fmt.Println("  ./octo transcribe <wav>         ASR (wav2vec2-base-960h CTC)")
+	fmt.Println("  ./octo transcribe <wav>         ASR (wav2vec2 or Qwen3-ASR)")
 	fmt.Println("  ./octo transcribe --live [opts] record mic clip → transcript")
-	fmt.Println("      --secs N  --loop  --model DIR")
+	fmt.Println("      --engine wav2vec2|qwen  --model DIR|0.6b|1.7b  --download")
+	fmt.Println("      --secs N  --loop  --simd/--no-simd  --max-tokens N")
 	fmt.Println("  ./octo serve [--addr :7878]    host octo_entities for FinchKit phones")
 	fmt.Println("  ./octo host <model.entity>      HTTP inference with a bounded request queue")
 	fmt.Println("      --addr :7878  --queue 32  --profile NAME  --tile 32")
@@ -303,7 +305,7 @@ func interactive() {
 		fmt.Println("  [7] Tested models (download + convert)")
 		fmt.Println("  [8] Generate image (Flux2 / Bonsai Image)")
 		fmt.Println("  [9] Generate speech (MOSS / Qwen3-TTS)")
-		fmt.Println("  [t] Transcribe speech (wav2vec2 — file or mic clip)")
+		fmt.Println("  [t] Transcribe speech (wav2vec2 / Qwen3-ASR)")
 		fmt.Println("  [0] Serve .entity CDN (FinchKit phones)")
 		fmt.Println("  [h] Host a mounted .entity model over HTTP")
 		fmt.Println("  [q] Quit")

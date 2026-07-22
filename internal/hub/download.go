@@ -203,6 +203,7 @@ func selectDownloadable(entries []treeEntry) []treeEntry {
 		switch {
 		case base == "config.json",
 			base == "generation_config.json",
+			base == "preprocessor_config.json",
 			base == "tokenizer.json",
 			base == "tokenizer_config.json",
 			base == "special_tokens_map.json",
