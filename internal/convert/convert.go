@@ -13,6 +13,7 @@ import (
 	"github.com/openfluke/octo/internal/catalog"
 	"github.com/openfluke/octo/internal/paths"
 	"github.com/openfluke/octo/internal/ui"
+	"github.com/openfluke/welvet/core"
 	"github.com/openfluke/welvet/model/entity"
 	"github.com/openfluke/welvet/model/hf"
 	"github.com/openfluke/welvet/quant"
@@ -135,9 +136,10 @@ func Menu(in *bufio.Reader) {
 	}
 }
 
-// QuantizeMenu re-packs an existing .entity (stub until welvet/entity packer).
+// QuantizeMenu re-packs an existing .entity to another quant or FormatNone dtype.
 func QuantizeMenu(in *bufio.Reader) {
 	fmt.Println("\nQuantize / re-pack .entity")
+	fmt.Println("  Re-encodes every numeric blob via f32 scratch (lossy). JSON sidecars copied as-is.")
 	ents := catalog.ListEntities()
 	if len(ents) == 0 {
 		fmt.Println("No .entity files yet. Convert first (menu [3]).")
@@ -152,18 +154,106 @@ func QuantizeMenu(in *bufio.Reader) {
 		fmt.Println("Invalid")
 		return
 	}
+	src := ents[idx-1]
 	formats := quant.AllFormats
-	for i, f := range formats {
-		fmt.Printf("  [%d] %s\n", i, f.String())
+	fmt.Println("\nTarget pack format")
+	fmt.Println("  [0] none  (native dtype — pick dtype next)")
+	fmt.Println("  [2] Q4_0  ← common chat quant")
+	fmt.Println("  [l] list all formats")
+	fi := ui.Ask(in, "Format: ", "2")
+	if fi == "l" || fi == "L" || fi == "?" {
+		for i, f := range formats {
+			fmt.Printf("  [%d] %s\n", i, f.String())
+		}
+		fi = ui.Ask(in, "Format index [0]: ", "0")
 	}
-	fi := ui.Ask(in, "Target format index: ", "0")
-	fidx, _ := strconv.Atoi(fi)
-	if fidx < 0 || fidx >= len(formats) {
+	fidx, err := strconv.Atoi(fi)
+	if err != nil || fidx < 0 || fidx >= len(formats) {
 		fmt.Println("Invalid format")
 		return
 	}
-	fmt.Printf("🚧 Re-pack to %s not wired yet (awaits welvet/entity Pack).\n", formats[fidx])
-	fmt.Printf("   Selected: %s\n", ents[idx-1].Path)
+	format := formats[fidx]
+
+	var dtPtr *core.DType
+	suffix := format.String()
+	label := format.String()
+	if format == quant.FormatNone {
+		fmt.Println("\nTarget dtype (FormatNone storage)")
+		fmt.Println("  [1] FLOAT32  ← default")
+		fmt.Println("  [2] FLOAT16")
+		fmt.Println("  [3] BFLOAT16")
+		fmt.Println("  [4] FLOAT64")
+		di := ui.Ask(in, "Dtype: ", "1")
+		var dt core.DType
+		switch di {
+		case "2":
+			dt = core.DTypeFloat16
+			suffix = "float16"
+			label = "FormatNone FLOAT16"
+		case "3":
+			dt = core.DTypeBFloat16
+			suffix = "bfloat16"
+			label = "FormatNone BFLOAT16"
+		case "4":
+			dt = core.DTypeFloat64
+			suffix = "float64"
+			label = "FormatNone FLOAT64"
+		default:
+			dt = core.DTypeFloat32
+			suffix = "none"
+			label = "FormatNone FLOAT32"
+		}
+		dtPtr = &dt
+	}
+
+	repo := entityRepoID(src.Path)
+	out := paths.EntityPathForFormat(repo, suffix)
+	if out == src.Path {
+		out = filepath.Join(filepath.Dir(src.Path), strings.TrimSuffix(filepath.Base(src.Path), ".entity")+"--repack.entity")
+	}
+	fmt.Printf("  %s → %s (%s)\n", src.Path, out, label)
+	if !ui.Confirm(in, "Proceed") {
+		fmt.Println("Cancelled")
+		return
+	}
+	err = entity.Repack(src.Path, out, entity.RepackOpts{
+		Format: format,
+		DType:  dtPtr,
+		Progress: func(block, total int, detail string) {
+			if block == 1 || block == total || block%8 == 0 {
+				fmt.Printf("    [%d/%d] %s\n", block, total, detail)
+			}
+		},
+	})
+	if err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
+	}
+	fmt.Printf("✅ Wrote %s\n", out)
+}
+
+func entityRepoID(entityPath string) string {
+	ef, err := entity.Open(entityPath)
+	if err == nil {
+		defer ef.Close()
+		if h := ef.Header(); h != nil {
+			if h.Transformer != nil && h.Transformer.Repo != "" {
+				return h.Transformer.Repo
+			}
+			if h.Wav2Vec2 != nil && h.Wav2Vec2.Repo != "" {
+				return h.Wav2Vec2.Repo
+			}
+		}
+	}
+	base := strings.TrimSuffix(filepath.Base(entityPath), ".entity")
+	// Strip trailing --format / -q4 suffixes for output naming.
+	for _, sep := range []string{"--", "-q"} {
+		if i := strings.LastIndex(base, sep); i > 0 {
+			base = base[:i]
+			break
+		}
+	}
+	return strings.ReplaceAll(base, "--", "/")
 }
 
 func convertSafetensors(snap catalog.Snapshot, format quant.Format) error {
